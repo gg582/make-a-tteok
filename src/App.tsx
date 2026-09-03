@@ -221,6 +221,28 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  /** Post a finished run to the shared 명부 (registered shops only). */
+  const submitRanking = useCallback(
+    (acc: Account, runScore: number, stage: number) => {
+      if (acc.name === '나그네' || !acc.registered || runScore <= 0) return;
+      const goods: ShopGoods = {
+        artbooks: acc.ownedArtbooks.map((id) => ARTBOOKS[id].name),
+        artifacts: { ...acc.artifacts },
+        regulars: acc.regulars.map(
+          (id) => REGULARS.find((r) => r.id === id)?.name ?? id
+        ),
+      };
+      fetch('/api/ranking', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: acc.name, score: runScore, stage, goods }),
+      })
+        .then(() => fetchRanking())
+        .catch(() => showToast('명부 서버에 닿지 않네… 다음에 다시 오를 걸세.'));
+    },
+    [fetchRanking, showToast]
+  );
+
   useEffect(() => {
     if (phase === 'menu') fetchRanking();
   }, [phase, fetchRanking]);
@@ -396,31 +418,13 @@ export default function App() {
         });
         // 명부-registered shops also send their run to the shared ranking.
         if (acc.registered) {
-          const goods: ShopGoods = {
-            artbooks: acc.ownedArtbooks.map((id) => ARTBOOKS[id].name),
-            artifacts: { ...acc.artifacts },
-            regulars: acc.regulars.map(
-              (id) => REGULARS.find((r) => r.id === id)?.name ?? id
-            ),
-          };
-          fetch('/api/ranking', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              name: acc.name,
-              score: verdict.state.runScore,
-              stage: verdict.state.stage,
-              goods,
-            }),
-          })
-            .then(() => fetchRanking())
-            .catch(() => showToast('명부 서버에 닿지 않네… 다음에 다시 오를 걸세.'));
+          submitRanking(acc, verdict.state.runScore, verdict.state.stage);
         }
       }
       window.setTimeout(() => setPhase('gameover'), 1400);
     }
     setPhase('result');
-  }, [fetchRanking, showToast]);
+  }, [showToast, submitRanking]);
 
   const finishRef = useRef(finishRound);
   finishRef.current = finishRound;
@@ -465,10 +469,15 @@ export default function App() {
 
   /** Back to the menu after a game over. */
   const handleEndRun = useCallback(() => {
+    // Ending a run early (stage clear → 쉬기) still counts for the 명부.
+    if (phaseRef.current === 'stageClear') {
+      const acc = accountRef.current;
+      if (acc) submitRanking(acc, runRef.current.runScore, runRef.current.stage);
+    }
     setRun(createStageState());
     setRegularVisiting(null);
     setPhase('menu');
-  }, []);
+  }, [submitRanking]);
 
   const updateFill = useCallback((beans: Record<Bean, number>) => {
     const total = beans.yellow + beans.black;
