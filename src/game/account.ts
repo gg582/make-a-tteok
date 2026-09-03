@@ -13,8 +13,8 @@ export interface Account {
   totalEarned: number;
   roundsPlayed: number;
   ownedArtbooks: ArtbookId[];
-  /** Which artbook illustration set is applied to customers (null = chibi). */
-  activeArtbook: ArtbookId | null;
+  /** Which artbook illustration sets are applied to customers (empty = chibi). */
+  activeArtbooks: ArtbookId[];
   artifacts: { sangaji: number; jupan: number };
   bestScore: number;
   /** Owned regular customers (단골). One visit pardons one failed serving. */
@@ -25,11 +25,20 @@ export interface Account {
 
 export const ARTBOOKS: Record<
   ArtbookId,
-  { name: string; desc: string; price: number; texture: string; gallery: string[] }
+  {
+    name: string;
+    desc: string;
+    /** Which customer archetypes this volume beautifies. */
+    covers: string;
+    price: number;
+    texture: string;
+    gallery: string[];
+  }
 > = {
   artbook_1: {
     name: '「청포도련님」 화첩',
     desc: '푸른 도포의 미소년 양반. 부채 끝에 봄바람이 맴돌더이다.',
+    covers: '젊은 양반 손님과 노인·중년 손님이 미형으로 다시 찾아오네.',
     price: 9000,
     texture: '/assets/textures/artbook_1.png',
     gallery: [
@@ -41,6 +50,7 @@ export const ARTBOOKS: Record<
   artbook_2: {
     name: '「연지곤지 아씨」 화첩',
     desc: '분홍 저고리의 미소녀 낭자. 웃으면 저잣거리가 환해지더이다.',
+    covers: '젊은 낭자 손님과 할멈·중년 손님이 미형으로 다시 찾아오네.',
     price: 12000,
     texture: '/assets/textures/artbook_2.png',
     gallery: [
@@ -52,6 +62,7 @@ export const ARTBOOKS: Record<
   artbook_3: {
     name: '「십리장터 객주」 화첩',
     desc: '냉소적인 미소년 보부상. 계산은 칼같이, 마음은…?',
+    covers: '보부상 손님과 노인·할멈 손님이 미형으로 다시 찾아오네.',
     price: 15000,
     texture: '/assets/textures/artbook_3.png',
     gallery: [
@@ -62,15 +73,12 @@ export const ARTBOOKS: Record<
   },
 };
 
-/** All 미형 variants that appear in-game once any artbook is applied. */
-export const ARTBOOK_FULL_SET = [
-  '/assets/textures/artbook_1.png',
-  '/assets/textures/artbook_2.png',
-  '/assets/textures/artbook_3.png',
-  '/assets/textures/artbook_elder.png',
-  '/assets/textures/artbook_middle.png',
-  '/assets/textures/artbook_granny.png',
-];
+/** Core customer index each volume maps to (matches scene.ts CUSTOMER_SETS). */
+export const ARTBOOK_CORE_INDEX: Record<ArtbookId, number> = {
+  artbook_1: 0,
+  artbook_2: 1,
+  artbook_3: 2,
+};
 
 export const ARTIFACTS: Record<
   ArtifactId,
@@ -152,7 +160,7 @@ export function createGuest(): Account {
     totalEarned: 0,
     roundsPlayed: 0,
     ownedArtbooks: [],
-    activeArtbook: null,
+    activeArtbooks: [],
     artifacts: { sangaji: 0, jupan: 0 },
     bestScore: 0,
     regulars: [],
@@ -160,11 +168,27 @@ export function createGuest(): Account {
   };
 }
 
+/** Fold legacy single-artbook saves into the multi-apply field. */
+function migrateArtbooks(raw: Record<string, unknown>, acc: Account): Account {
+  if (Array.isArray(raw.activeArtbooks)) {
+    return { ...acc, activeArtbooks: raw.activeArtbooks as ArtbookId[] };
+  }
+  const legacy = raw.activeArtbook;
+  if (typeof legacy === 'string' && legacy in ARTBOOKS) {
+    return { ...acc, activeArtbooks: [legacy as ArtbookId] };
+  }
+  return acc;
+}
+
 export function loadAccount(): Account | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
-    const acc = { ...createGuest(), ...(JSON.parse(raw) as Partial<Account>) };
+    const parsed = JSON.parse(raw) as Partial<Account> & Record<string, unknown>;
+    const acc = migrateArtbooks(parsed, {
+      ...createGuest(),
+      ...parsed,
+    } as Account);
     return acc.name === GUEST_NAME ? null : acc;
   } catch {
     return null;
@@ -202,16 +226,16 @@ export function importAccount(json: string): Account {
   if (!a || typeof a.name !== 'string' || typeof a.money !== 'number') {
     throw new Error('계정 파일 형식이 올바르지 않습니다');
   }
-  const acc: Account = {
+  const base: Account = {
     ...createGuest(),
     ...a,
     name: a.name,
     money: a.money,
     ownedArtbooks: Array.isArray(a.ownedArtbooks) ? a.ownedArtbooks : [],
     artifacts: { ...createGuest().artifacts, ...(a.artifacts ?? {}) },
-    activeArtbook: a.activeArtbook ?? null,
     regulars: Array.isArray(a.regulars) ? a.regulars : [],
-  };
+  } as Account;
+  const acc = migrateArtbooks(a as Record<string, unknown>, base);
   saveAccount(acc);
   return acc;
 }

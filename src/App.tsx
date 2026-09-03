@@ -21,6 +21,7 @@ import {
 } from './game/metrology';
 import {
   ARTBOOKS,
+  ARTBOOK_CORE_INDEX,
   ARTIFACTS,
   REGULARS,
   buyArtbook,
@@ -36,6 +37,7 @@ import {
   saveAccount,
   useArtifact,
   type Account,
+  type ArtbookId,
   type ArtifactId,
   type RegularId,
 } from './game/account';
@@ -146,6 +148,10 @@ function loadBoard(): BoardEntry[] {
 
 /** Basins gauge scaling: two-bean and hard orders can exceed MAX_FILL_HOP. */
 const fillMaxFor = (targetHop: number) => Math.max(MAX_FILL_HOP, targetHop * 1.3);
+
+/** Applied volumes → scene core customer indexes. */
+const artbookIndexes = (ids: ArtbookId[]) =>
+  ids.map((id) => ARTBOOK_CORE_INDEX[id]);
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -316,10 +322,13 @@ export default function App() {
       .init()
       .then(() => {
         // Apply saved artbook preference after textures are loaded.
-        if (accountRef.current?.activeArtbook) scene.setArtbookMode(true);
+        const savedArtbooks = accountRef.current?.activeArtbooks ?? [];
+        if (savedArtbooks.length > 0) {
+          scene.setArtbooks(artbookIndexes(savedArtbooks));
+        }
         // Dev/test hook: ?artbook forces illustration mode for screenshots.
         if (new URLSearchParams(window.location.search).has('artbook')) {
-          scene.setArtbookMode(true);
+          scene.setArtbooks([0, 1, 2]);
         }
         // Dev/test hook: ?autostart skips the menu (no audio gesture needed).
         if (new URLSearchParams(window.location.search).has('autostart')) {
@@ -610,7 +619,9 @@ export default function App() {
   const handleLogin = useCallback((name: string, registered = false) => {
     const acc = login(name, registered);
     setAccount(acc);
-    if (acc.activeArtbook) sceneRef.current?.setArtbookMode(true);
+    if (acc.activeArtbooks.length > 0) {
+      sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
+    }
     showToast(
       registered
         ? `${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`
@@ -637,7 +648,7 @@ export default function App() {
   const handleLogout = useCallback(() => {
     logout();
     setAccount(null);
-    sceneRef.current?.setArtbookMode(false);
+    sceneRef.current?.setArtbooks([]);
     showToast('나그네로 돌아갔네.');
   }, [showToast]);
 
@@ -661,7 +672,9 @@ export default function App() {
         .then((json) => {
           const acc = importAccount(json);
           setAccount(acc);
-          if (acc.activeArtbook) sceneRef.current?.setArtbookMode(true);
+          if (acc.activeArtbooks.length > 0) {
+            sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
+          }
           showToast(`${acc.name} 계정을 불러왔네!`);
         })
         .catch(() => showToast('계정 파일이 올바르지 않네…'));
@@ -730,15 +743,26 @@ export default function App() {
     [showToast]
   );
 
+  /** Toggle one volume; several can be applied at once. */
   const handleApplyArtbook = useCallback(
-    (id: keyof typeof ARTBOOKS | null) => {
+    (id: ArtbookId) => {
       const acc = accountRef.current;
-      if (!acc) return;
-      const next: Account = { ...acc, activeArtbook: id };
+      if (!acc || !acc.ownedArtbooks.includes(id)) return;
+      const applying = !acc.activeArtbooks.includes(id);
+      const next: Account = {
+        ...acc,
+        activeArtbooks: applying
+          ? [...acc.activeArtbooks, id]
+          : acc.activeArtbooks.filter((a) => a !== id),
+      };
       saveAccount(next);
       setAccount(next);
-      sceneRef.current?.setArtbookMode(id !== null);
-      showToast(id ? '화첩을 적용했네! 손님들이 달라 보이네…' : '원래 그림으로 돌렸네.');
+      sceneRef.current?.setArtbooks(artbookIndexes(next.activeArtbooks));
+      showToast(
+        applying
+          ? `「${ARTBOOKS[id].name}」을(를) 펼쳤네! ${ARTBOOKS[id].covers}`
+          : `「${ARTBOOKS[id].name}」을(를) 덮었네.`
+      );
     },
     [showToast]
   );
@@ -1371,8 +1395,9 @@ function ShopPanel({
       <div>
         <h3 className="mb-2 text-2xl font-bold">명화 화첩 — 미소년·미소녀 판</h3>
         <p className="mb-2 text-sm opacity-75">
-          사두면 손님들이 아리따운 그림으로 다시 찾아오네. 노인이건 중년이건 할멈이건,
-          전부 미형으로 싹 바뀌는 걸세! 값은 좀 하지만, 후회는 없을 걸세.
+          사두면 화첩 갤러리에서 펼칠 수 있네. 한 권은 그 화첩이 맡은 손님들만
+          미형으로 바꾸니, 노인이건 중년이건 할멈이건 전부 미형으로 싹 바꾸려면
+          세 권을 모두 모아 함께 펼쳐야 하네! 값은 좀 하지만, 후회는 없을 걸세.
         </p>
         <div className="grid gap-3">
           {(Object.keys(ARTBOOKS) as Array<keyof typeof ARTBOOKS>).map((id) => {
@@ -1454,29 +1479,37 @@ function ShopPanel({
   );
 }
 
-/** Artbook gallery with apply buttons. */
+/** Artbook gallery with per-volume apply toggles (multiple can stack). */
 function GalleryPanel({
   account,
   onApply,
 }: {
   account: Account | null;
-  onApply: (id: keyof typeof ARTBOOKS | null) => void;
+  onApply: (id: ArtbookId) => void;
 }) {
   const owned = account?.ownedArtbooks ?? [];
+  const active = account?.activeArtbooks ?? [];
   return (
     <div className="space-y-4 text-[#4a2c14]">
+      <p className="text-sm opacity-75">
+        화첩은 여러 권을 함께 펼칠 수 있네. 한 권마다 맡은 손님들만 미형으로
+        바뀌니, 세 권을 모두 모아 펼쳐야 손님 전원이 미형이 되는 걸세!
+      </p>
       {owned.map((id) => {
         const item = ARTBOOKS[id];
-        const active = account?.activeArtbook === id;
+        const isActive = active.includes(id);
         return (
           <div key={id} className="rounded-xl border-2 border-[#c9a35f] bg-white/50 p-3">
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-lg font-bold">{item.name}</div>
+              <div>
+                <div className="text-lg font-bold">{item.name}</div>
+                <div className="text-sm opacity-75">{item.covers}</div>
+              </div>
               <button
-                onClick={() => onApply(active ? null : id)}
-                className={`btn-panel ${active ? 'opacity-60' : ''}`}
+                onClick={() => onApply(id)}
+                className={`btn-panel ${isActive ? 'opacity-60' : ''}`}
               >
-                {active ? '적용 해제' : '화첩 적용하기'}
+                {isActive ? '화첩 덮기' : '함께 펼치기'}
               </button>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -1492,10 +1525,11 @@ function GalleryPanel({
           </div>
         );
       })}
-      {account?.activeArtbook && (
+      {active.length > 0 && (
         <p className="text-center text-sm opacity-75">
-          지금 「{ARTBOOKS[account.activeArtbook].name}」이(가) 적용되어 있네.
-          노인·중년·할멈 할 것 없이 손님 전원이 미형으로 한껏 멋을 부리고 찾아올 걸세!
+          {active.length === 3
+            ? '세 화첩이 모두 펼쳐졌네! 노인·중년·할멈 할 것 없이 손님 전원이 미형으로 한껏 멋을 부리고 찾아올 걸세!'
+            : `지금 ${active.length}권이 펼쳐져 있네. 아직 ${3 - active.length}권이 모자라 일부 손님은 예전 모습 그대로일 걸세.`}
         </p>
       )}
     </div>

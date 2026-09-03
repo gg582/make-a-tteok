@@ -46,6 +46,15 @@ const ARTBOOK_EXTRA: FaceSet[] = [
   face('artbook_granny'),
 ];
 
+// Each volume beautifies its core customer plus these extra archetypes
+// (indexes into ARTBOOK_EXTRA: elder 0, middle 1, granny 2). Only with all
+// three volumes applied is every customer 미형.
+const ARTBOOK_EXTRA_BY_CORE: number[][] = [
+  [0, 1], // artbook_1: elder + middle
+  [2, 1], // artbook_2: granny + middle
+  [0, 2], // artbook_3: elder + granny
+];
+
 interface FaceTexSet {
   neutral: THREE.Texture;
   happy: THREE.Texture;
@@ -69,7 +78,7 @@ export class TteokScene {
   private customerTexs: FaceTexSet[] = [];
   private artbookTexs: FaceTexSet[] = [];
   private artbookExtraTexs: FaceTexSet[] = [];
-  private useArtbook = false;
+  private appliedArtbooks = new Set<number>();
   private powder: Powder | null = null;
   private coinTex: THREE.Texture | null = null;
 
@@ -291,9 +300,11 @@ export class TteokScene {
     this.coins = [];
   }
 
-  /** Switch between chibi and purchased artbook illustrations. */
-  setArtbookMode(on: boolean): void {
-    this.useArtbook = on;
+  /** Apply purchased artbook volumes (core indexes 0-2); empty = all chibi. */
+  setArtbooks(coreIndexes: number[]): void {
+    this.appliedArtbooks = new Set(
+      coreIndexes.filter((i) => i >= 0 && i < CUSTOMER_SETS.length)
+    );
     this.spawnCustomer();
   }
 
@@ -303,19 +314,30 @@ export class TteokScene {
     // customer toward the center and shrink them a touch to stay visible.
     const aspect = window.innerWidth / window.innerHeight;
     const pt = THREE.MathUtils.clamp((1.1 - aspect) / (1.1 - 0.46), 0, 1);
-    // In artbook mode the whole pool is 미형: core pairs + elder/middle/
-    // granny variants, so every age group gets a beautiful illustration.
-    const pool = this.useArtbook
-      ? [...this.artbookTexs, ...this.artbookExtraTexs]
-      : this.customerTexs;
-    const set = pool[Math.floor(Math.random() * pool.length)] ?? pool[0];
-    if (!set) return;
+    // Partial application: each applied volume swaps in its own 미형 core
+    // customer and adds its extra 미형 archetypes; the rest stay chibi.
+    const pool: Array<{ set: FaceTexSet; artbook: boolean }> =
+      CUSTOMER_SETS.map((_, i) => ({
+        set: this.appliedArtbooks.has(i)
+          ? this.artbookTexs[i]
+          : this.customerTexs[i],
+        artbook: this.appliedArtbooks.has(i),
+      }));
+    const extras = new Set<number>();
+    for (const i of this.appliedArtbooks) {
+      for (const e of ARTBOOK_EXTRA_BY_CORE[i] ?? []) extras.add(e);
+    }
+    for (const e of extras) {
+      pool.push({ set: this.artbookExtraTexs[e], artbook: true });
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)] ?? pool[0];
+    if (!pick) return;
     // Artbook illustrations are taller and push further left so the speech
     // bubble never covers the character; chibi keeps the chunky size.
-    const height = (this.useArtbook ? 3.9 : 3.8) * (1 - pt * 0.18);
-    const x = (this.useArtbook ? -3.15 : -2.35) * (1 - pt * 0.38);
-    this.customer = new SpriteActor(set.neutral, height, this.useArtbook);
-    this.customer.setExpressions(set.happy, set.angry);
+    const height = (pick.artbook ? 3.9 : 3.8) * (1 - pt * 0.18);
+    const x = (pick.artbook ? -3.15 : -2.35) * (1 - pt * 0.38);
+    this.customer = new SpriteActor(pick.set.neutral, height, pick.artbook);
+    this.customer.setExpressions(pick.set.happy, pick.set.angry);
     // z = -2.45 keeps the character fully behind the basin wall (z = -0.8),
     // so the depth-based occlusion always hides any overlap cleanly.
     this.customer.setPosition(x, 0.72, -2.45);
