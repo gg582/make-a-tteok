@@ -1,0 +1,388 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.625rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+/* ===== 평석의 달인 — game UI ===== */
+.font-game {
+  font-family: 'Jua', 'Noto Serif KR', 'Malgun Gothic', sans-serif;
+}
+
+.order-scroll {
+  min-width: 10rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(160deg, #f6e7c8, #ecd6a8);
+  border: 3px solid #8a5a2a;
+  box-shadow: 0 4px 0 #5a3a18, 0 8px 18px rgba(0, 0, 0, 0.45);
+}
+
+.timer-box {
+  padding: 0.45rem 1.2rem;
+  border-radius: 9999px;
+  background: rgba(20, 12, 6, 0.75);
+  border: 2px solid #a4712f;
+  color: #ffe9bd;
+  font-size: 1.25rem;
+}
+
+.timer-urgent {
+  color: #ff8f7a;
+  border-color: #d0402a;
+  animation: timerPulse 0.5s infinite alternate;
+}
+
+@keyframes timerPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+
+.speech-bubble {
+  position: relative;
+  padding: 0.9rem 1.3rem;
+  border-radius: 1.2rem;
+  background: #fdf6e3;
+  border: 3px solid #6b4520;
+  color: #3a2410;
+  font-size: 1.35rem;
+  line-height: 1.5;
+  box-shadow: 0 6px 0 #4a2e12, 0 12px 24px rgba(0, 0, 0, 0.4);
+  animation: bubblePop 0.25s ease-out;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  width: 24px;
+  height: 24px;
+  background: #fdf6e3;
+  border-right: 3px solid #6b4520;
+  border-bottom: 3px solid #6b4520;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+@keyframes bubblePop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.btn-vessel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 6.2rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #a4712f, #7a4e1c);
+  border: 3px solid #54350f;
+  color: #ffedc9;
+  box-shadow: 0 5px 0 #3c250a, 0 8px 14px rgba(0, 0, 0, 0.4);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+
+.btn-vessel:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #3c250a;
+}
+
+.btn-vessel-scoop {
+  background: linear-gradient(180deg, #a4442f, #7a2c1c);
+  border-color: #541a0f;
+  box-shadow: 0 5px 0 #3c100a, 0 8px 14px rgba(0, 0, 0, 0.4);
+}
+
+.btn-scoop {
+  min-width: 6.2rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #8a2f22, #5f1d14);
+  border: 3px solid #3f110b;
+  color: #ffd9d0;
+  font-size: 1.05rem;
+  box-shadow: 0 5px 0 #2c0b06;
+}
+
+.btn-scoop-on {
+  outline: 4px solid #ffb199;
+  animation: timerPulse 0.4s infinite alternate;
+}
+
+.btn-pound {
+  padding: 0.9rem 2.6rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, #d9a441, #b57a1e);
+  border: 4px solid #7a4e10;
+  color: #3a2408;
+  font-size: 1.8rem;
+  font-weight: bold;
+  box-shadow: 0 6px 0 #5c3a0c, 0 10px 20px rgba(0, 0, 0, 0.45);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+
+.btn-pound:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 #5c3a0c;
+}
+
+.btn-start {
+  padding: 1rem 3rem;
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, #d9a441, #b57a1e);
+  border: 4px solid #7a4e10;
+  color: #3a2408;
+  font-size: 2rem;
+  font-weight: bold;
+  box-shadow: 0 6px 0 #5c3a0c, 0 10px 20px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s ease;
+}
+
+.btn-start:hover { transform: scale(1.05); }
+.btn-start:active { transform: translateY(4px); }
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.4rem 2.4rem;
+  border-radius: 1.4rem;
+  background: rgba(24, 14, 7, 0.88);
+  border: 3px solid #a4712f;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  animation: bubblePop 0.3s ease-out;
+}
+
+.coin-emblem {
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: 9999px;
+  background-image: url('/assets/textures/sangpyeong_tongbo.png');
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 30px rgba(255, 190, 90, 0.5);
+  animation: coinSpin 6s linear infinite;
+}
+
+@keyframes coinSpin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
+.btn-difficulty {
+  padding: 0.55rem 1.4rem;
+  border-radius: 9999px;
+  background: rgba(20, 12, 6, 0.7);
+  border: 2px solid #a4712f;
+  color: #ffe9bd;
+  font-size: 1.05rem;
+  transition: transform 0.08s ease;
+}
+
+.btn-difficulty:hover { transform: scale(1.04); }
+
+.btn-difficulty-on {
+  background: linear-gradient(180deg, #8a2f22, #5f1d14);
+  border-color: #ffb199;
+  color: #ffd9d0;
+}
+
+/* ===== panels / shop / gallery / beans ===== */
+.panel-close {
+  padding: 0.35rem 1rem;
+  border-radius: 9999px;
+  background: #7a4e1c;
+  color: #ffedc9;
+  border: 2px solid #54350f;
+}
+
+.btn-panel {
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(180deg, #a4712f, #7a4e1c);
+  border: 2px solid #54350f;
+  color: #ffedc9;
+  font-size: 1rem;
+  box-shadow: 0 3px 0 #3c250a;
+}
+
+.btn-panel:active { transform: translateY(2px); box-shadow: none; }
+
+.btn-panel-danger {
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(180deg, #8a2f22, #5f1d14);
+  border: 2px solid #3f110b;
+  color: #ffd9d0;
+  font-size: 1rem;
+}
+
+.shop-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.6rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 250, 238, 0.7);
+  border: 2px solid #c9a35f;
+}
+
+.shop-thumb {
+  width: 4rem;
+  height: 5.4rem;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 0.5rem;
+  background: #2a1c10;
+}
+
+.shop-artifact-icon {
+  width: 4rem;
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: #2a1c10;
+  color: #e9c079;
+  font-size: 2rem;
+}
+
+.shop-owned {
+  padding: 0.4rem 1rem;
+  border-radius: 0.7rem;
+  background: #5b7a4f;
+  color: #eef7e6;
+  font-weight: bold;
+}
+
+.gallery-card {
+  padding: 0.6rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 250, 238, 0.7);
+  border: 2px solid #c9a35f;
+}
+
+.gallery-img {
+  width: 100%;
+  height: 16rem;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: linear-gradient(180deg, #3a2818, #241708);
+}
+
+.btn-artifact {
+  padding: 0.9rem 1.3rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, #5b4a8a, #3f2f66);
+  border: 3px solid #2a1d47;
+  color: #e6ddff;
+  font-size: 1.2rem;
+  box-shadow: 0 5px 0 #1d1333;
+}
+
+.btn-artifact:active { transform: translateY(3px); box-shadow: none; }
+
+.bean-btn {
+  padding: 0.45rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 1.05rem;
+  border: 3px solid transparent;
+  transition: transform 0.06s ease;
+}
+
+.bean-yellow {
+  background: #e9c079;
+  color: #4a2c14;
+  border-color: #a4712f;
+}
+
+.bean-black {
+  background: #3a2e28;
+  color: #e9d9c9;
+  border-color: #1d1512;
+}
+
+.bean-on {
+  outline: 4px solid #ffd166;
+  transform: scale(1.06);
+}
+
+.gallery-img-sm {
+  width: 100%;
+  height: 11rem;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: linear-gradient(180deg, #3a2818, #241708);
+}

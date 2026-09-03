@@ -1,0 +1,7 @@
+services:
+  gopherdis:
+    image: ghcr.io/gosuda/gopherdis:1.0-simd
+    container_name: hanyang-tteok-gopherdis
+    ports:
+      - "6379:6379"
+    restart: always
