@@ -9,6 +9,9 @@ export default defineConfig({
   plugins: [inspectAttr(), react()],
   server: {
     port: 3000,
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
   },
   resolve: {
     alias: {

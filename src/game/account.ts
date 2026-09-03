@@ -19,6 +19,8 @@ export interface Account {
   bestScore: number;
   /** Owned regular customers (단골). One visit pardons one failed serving. */
   regulars: RegularId[];
+  /** Registered in the shared 명부 — scores go to the server ranking. */
+  registered: boolean;
 }
 
 export const ARTBOOKS: Record<
@@ -154,6 +156,7 @@ export function createGuest(): Account {
     artifacts: { sangaji: 0, jupan: 0 },
     bestScore: 0,
     regulars: [],
+    registered: false,
   };
 }
 
@@ -172,13 +175,13 @@ export function saveAccount(acc: Account): void {
   localStorage.setItem(LS_KEY, JSON.stringify(acc));
 }
 
-export function login(name: string): Account {
+export function login(name: string, registered = false): Account {
   const trimmed = name.trim().slice(0, 12) || GUEST_NAME;
   const existing = loadAccount();
   const acc =
     existing && existing.name === trimmed
-      ? existing
-      : { ...createGuest(), name: trimmed };
+      ? { ...existing, registered: existing.registered || registered }
+      : { ...createGuest(), name: trimmed, registered };
   saveAccount(acc);
   return acc;
 }

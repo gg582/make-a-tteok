@@ -98,6 +98,41 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 명부 (global registry): registered shops post their run scores here.
+    if (req.method === 'POST' && req.url === '/api/ranking') {
+      const { name, score, stage, goods } = await readBody(req);
+      if (typeof name !== 'string' || typeof score !== 'number') {
+        return send(res, 400, { error: 'name and score required' });
+      }
+      const member = JSON.stringify({
+        name: name.slice(0, 12),
+        stage: stage ?? 1,
+        goods: goods && typeof goods === 'object' ? goods : null,
+      });
+      await redis.zAdd('ranking:global', { score, value: member });
+      return send(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && req.url === '/api/ranking') {
+      const raw = await redis.zRangeWithScores('ranking:global', 0, 9, { REV: true });
+      return send(res, 200, {
+        ranking: raw.map((e) => {
+          let name = e.value;
+          let stage = 1;
+          let goods = null;
+          try {
+            const m = JSON.parse(e.value);
+            name = m.name;
+            stage = m.stage ?? 1;
+            goods = m.goods ?? null;
+          } catch {
+            /* legacy plain-name member */
+          }
+          return { name, score: e.score, stage, goods };
+        }),
+      });
+    }
+
     send(res, 404, { error: 'not found' });
   } catch (err) {
     console.error(err);

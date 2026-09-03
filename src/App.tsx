@@ -67,6 +67,17 @@ interface BoardEntry {
   stage: number;
 }
 
+/** 잡화 a ranked shop carries — shown when its name is tapped. */
+interface ShopGoods {
+  artbooks: string[];
+  artifacts: { sangaji: number; jupan: number };
+  regulars: string[];
+}
+
+interface ServerEntry extends BoardEntry {
+  goods: ShopGoods | null;
+}
+
 const ORDER_BARKS = [
   (label: string) => `어이! 찰떡 ${label}치 후딱 안 내오고 뭐 하쇼?!`,
   (label: string) => `주인장! 찰떡 ${label}, 어여 맞춰 내오시오!`,
@@ -163,6 +174,8 @@ export default function App() {
   const [skipped, setSkipped] = useState(false);
   const [dialogue, setDialogue] = useState('');
   const [board, setBoard] = useState<BoardEntry[]>(loadBoard);
+  const [serverBoard, setServerBoard] = useState<ServerEntry[]>([]);
+  const [goodsView, setGoodsView] = useState<ServerEntry | null>(null);
   const [hardMode, setHardMode] = useState(false);
   const [activeBean, setActiveBean] = useState<Bean>('yellow');
   const [beanHop, setBeanHop] = useState<Record<Bean, number>>({
@@ -197,6 +210,20 @@ export default function App() {
     setToast(msg);
     window.setTimeout(() => setToast(''), 2200);
   }, []);
+
+  // Pull the shared 명부 ranking (best effort — offline is fine).
+  const fetchRanking = useCallback(() => {
+    fetch('/api/ranking')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: { ranking?: ServerEntry[] }) => {
+        if (Array.isArray(data.ranking)) setServerBoard(data.ranking);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'menu') fetchRanking();
+  }, [phase, fetchRanking]);
 
   // --- Scene boot (once) -------------------------------------------------
   useEffect(() => {
@@ -367,11 +394,33 @@ export default function App() {
           localStorage.setItem(LS_BOARD, JSON.stringify(next));
           return next;
         });
+        // 명부-registered shops also send their run to the shared ranking.
+        if (acc.registered) {
+          const goods: ShopGoods = {
+            artbooks: acc.ownedArtbooks.map((id) => ARTBOOKS[id].name),
+            artifacts: { ...acc.artifacts },
+            regulars: acc.regulars.map(
+              (id) => REGULARS.find((r) => r.id === id)?.name ?? id
+            ),
+          };
+          fetch('/api/ranking', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              name: acc.name,
+              score: verdict.state.runScore,
+              stage: verdict.state.stage,
+              goods,
+            }),
+          })
+            .then(() => fetchRanking())
+            .catch(() => showToast('명부 서버에 닿지 않네… 다음에 다시 오를 걸세.'));
+        }
       }
       window.setTimeout(() => setPhase('gameover'), 1400);
     }
     setPhase('result');
-  }, []);
+  }, [fetchRanking, showToast]);
 
   const finishRef = useRef(finishRound);
   finishRef.current = finishRound;
@@ -490,11 +539,15 @@ export default function App() {
   );
 
   // --- Account / panels -------------------------------------------------------
-  const handleLogin = useCallback((name: string) => {
-    const acc = login(name);
+  const handleLogin = useCallback((name: string, registered = false) => {
+    const acc = login(name, registered);
     setAccount(acc);
     if (acc.activeArtbook) sceneRef.current?.setArtbookMode(true);
-    showToast(`${acc.name} 님, 어서 오시오!`);
+    showToast(
+      registered
+        ? `${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`
+        : `${acc.name} 님, 어서 오시오!`
+    );
   }, [showToast]);
 
   const handleLogout = useCallback(() => {
@@ -800,6 +853,28 @@ export default function App() {
               </ol>
             </div>
           )}
+          {serverBoard.length > 0 && (
+            <div className="mt-4 rounded-xl bg-black/40 px-6 py-4 text-center">
+              <div className="text-lg text-amber-300">명부 랭킹 — 천하의 떡집들</div>
+              <div className="text-xs text-amber-200/60">
+                가게 이름을 누르면 가진 잡화를 볼 수 있네
+              </div>
+              <ol className="mt-1 space-y-0.5 text-amber-100/90">
+                {serverBoard.map((e, i) => (
+                  <li key={i}>
+                    {i + 1}위 —{' '}
+                    <button
+                      onClick={() => setGoodsView(e)}
+                      className="font-bold text-amber-200 underline decoration-dotted underline-offset-4 hover:text-amber-100"
+                    >
+                      {e.name}
+                    </button>{' '}
+                    님 · {e.score}전 ({e.stage}장 도달)
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
 
@@ -836,6 +911,58 @@ export default function App() {
             account={account}
             onApply={handleApplyArtbook}
           />
+        </PanelShell>
+      )}
+
+      {/* Goods peek modal (명부 랭킹) */}
+      {goodsView && (
+        <PanelShell
+          onClose={() => setGoodsView(null)}
+          title={`「${goodsView.name}」의 가진 잡화`}
+        >
+          {goodsView.goods ? (
+            <div className="space-y-3 text-[#4a2c14]">
+              <p className="text-sm opacity-75">
+                {goodsView.score}전 · {goodsView.stage}장 도달한 가게의 살림이네.
+              </p>
+              <div>
+                <h3 className="text-xl font-bold">화첩</h3>
+                {goodsView.goods.artbooks.length > 0 ? (
+                  <ul className="list-inside list-disc">
+                    {goodsView.goods.artbooks.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="opacity-70">가진 화첩이 없네.</p>
+                )}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">아티팩트</h3>
+                <p>
+                  산가지 ×{goodsView.goods.artifacts.sangaji} · 주판 ×
+                  {goodsView.goods.artifacts.jupan}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">단골</h3>
+                {goodsView.goods.regulars.length > 0 ? (
+                  <ul className="list-inside list-disc">
+                    {goodsView.goods.regulars.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="opacity-70">맺은 단골이 없네.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[#4a2c14]">
+              이 가게는 살림살이를 공개하지 않았네. 옛날 명부 기록이거나
+              아낙네의 비밀장부인 모양이구려.
+            </p>
+          )}
         </PanelShell>
       )}
 
@@ -974,19 +1101,34 @@ function AccountPanel({
 }: {
   account: Account | null;
   isLoggedIn: boolean;
-  onLogin: (name: string) => void;
+  onLogin: (name: string, registered?: boolean) => void;
   onLogout: () => void;
   onExport: () => void;
   onImport: (f: File) => void;
 }) {
   const [name, setName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const handleRegistrySignup = () => {
+    if (!name.trim()) return;
+    if (
+      window.confirm(
+        '브라우저 밖인 명부에 이름이 기록되네. 다른 떡집이랑 겨뤄 볼 수 있겠는가?'
+      )
+    ) {
+      onLogin(name, true);
+    }
+  };
   return (
     <div className="space-y-4 text-[#4a2c14]">
       {isLoggedIn ? (
         <>
           <p className="text-xl">
             <b>{account!.name}</b> 님으로 장사 중이네. 곳간: <b>{account!.money}전</b>
+            {account!.registered && (
+              <span className="ml-2 rounded-full bg-amber-600 px-2 py-0.5 text-sm text-amber-50">
+                명부 등재
+              </span>
+            )}
           </p>
           <p className="text-sm opacity-80">
             계정은 이 브라우저에만 저장되네. 다른 기기로 옮기려면 JSON 백업을 쓰시오.
@@ -1019,6 +1161,11 @@ function AccountPanel({
             />
             <button onClick={() => name.trim() && onLogin(name)} className="btn-panel">
               장부에 이름 올리기
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleRegistrySignup} className="btn-panel">
+              명부에 등록 후 가입
             </button>
           </div>
           <div className="flex gap-2">
