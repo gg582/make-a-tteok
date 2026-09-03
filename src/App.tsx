@@ -550,6 +550,22 @@ export default function App() {
     );
   }, [showToast]);
 
+  const handleRegister = useCallback(() => {
+    const acc = accountRef.current;
+    if (!acc || acc.name === '나그네') return;
+    if (
+      !window.confirm(
+        '브라우저 밖인 명부에 이름이 기록되네. 다른 떡집이랑 겨뤄 볼 수 있겠는가?'
+      )
+    ) {
+      return;
+    }
+    const next: Account = { ...acc, registered: true };
+    saveAccount(next);
+    setAccount(next);
+    showToast(`${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`);
+  }, [showToast]);
+
   const handleLogout = useCallback(() => {
     logout();
     setAccount(null);
@@ -885,6 +901,7 @@ export default function App() {
             account={account}
             isLoggedIn={isLoggedIn}
             onLogin={handleLogin}
+            onRegister={handleRegister}
             onLogout={handleLogout}
             onExport={handleExport}
             onImport={handleImport}
@@ -1095,6 +1112,7 @@ function AccountPanel({
   account,
   isLoggedIn,
   onLogin,
+  onRegister,
   onLogout,
   onExport,
   onImport,
@@ -1102,6 +1120,7 @@ function AccountPanel({
   account: Account | null;
   isLoggedIn: boolean;
   onLogin: (name: string, registered?: boolean) => void;
+  onRegister: () => void;
   onLogout: () => void;
   onExport: () => void;
   onImport: (f: File) => void;
@@ -1144,6 +1163,16 @@ function AccountPanel({
               나그네로 돌아가기
             </button>
           </div>
+          {!account!.registered && (
+            <div className="flex flex-wrap gap-2">
+              <button onClick={onRegister} className="btn-panel">
+                명부에 등록
+              </button>
+              <p className="w-full text-sm opacity-75">
+                등록하면 한 판 끝날 때마다 점수가 천하 떡집 명부 랭킹에 오르네.
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <>
