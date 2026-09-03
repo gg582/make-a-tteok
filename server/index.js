@@ -104,8 +104,21 @@ const server = http.createServer(async (req, res) => {
       if (typeof name !== 'string' || typeof score !== 'number') {
         return send(res, 400, { error: 'name and score required' });
       }
+      const cleanName = name.slice(0, 12);
+      // Upsert by shop name: drop older entries for the same shop so
+      // changed goods never leave stale duplicates behind.
+      const all = await redis.zRange('ranking:global', 0, -1);
+      for (const m of all) {
+        let mName = m;
+        try {
+          mName = JSON.parse(m).name;
+        } catch {
+          /* legacy plain-name member */
+        }
+        if (mName === cleanName) await redis.zRem('ranking:global', m);
+      }
       const member = JSON.stringify({
-        name: name.slice(0, 12),
+        name: cleanName,
         stage: stage ?? 1,
         goods: goods && typeof goods === 'object' ? goods : null,
       });

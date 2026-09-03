@@ -246,17 +246,20 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  /** 잡화 snapshot of an account, as stored in the 명부. */
+  const goodsOf = (acc: Account): ShopGoods => ({
+    artbooks: [...acc.ownedArtbooks].map((id) => ARTBOOKS[id].name).sort(),
+    artifacts: { ...acc.artifacts },
+    regulars: [...acc.regulars]
+      .map((id) => REGULARS.find((r) => r.id === id)?.name ?? id)
+      .sort(),
+  });
+
   /** Post a finished run to the shared 명부 (registered shops only). */
   const submitRanking = useCallback(
     (acc: Account, runScore: number, stage: number) => {
       if (acc.name === '나그네' || !acc.registered || runScore <= 0) return;
-      const goods: ShopGoods = {
-        artbooks: acc.ownedArtbooks.map((id) => ARTBOOKS[id].name),
-        artifacts: { ...acc.artifacts },
-        regulars: acc.regulars.map(
-          (id) => REGULARS.find((r) => r.id === id)?.name ?? id
-        ),
-      };
+      const goods = goodsOf(acc);
       fetch('/api/ranking', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -267,6 +270,37 @@ export default function App() {
     },
     [fetchRanking, showToast]
   );
+
+  // On first access, reconcile local account vs the 명부 record: missing
+  // entries get created, stale scores/goods get overwritten with local truth.
+  const registrySyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const acc = account;
+    if (!acc || acc.name === '나그네' || !acc.registered) return;
+    if (registrySyncedRef.current === acc.name) return;
+    registrySyncedRef.current = acc.name;
+    const goods = goodsOf(acc);
+    fetch('/api/ranking')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: { ranking?: ServerEntry[] }) => {
+        const mine = (data.ranking ?? []).find((e) => e.name === acc.name);
+        const sameGoods =
+          !!mine && JSON.stringify(mine.goods) === JSON.stringify(goods);
+        const score = Math.max(acc.bestScore, mine?.score ?? 0);
+        const stage = Math.max(1, mine?.stage ?? 1);
+        if (mine && sameGoods && mine.score >= acc.bestScore) return; // in sync
+        if (score <= 0) return; // nothing worth engraving yet
+        return fetch('/api/ranking', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: acc.name, score, stage, goods }),
+        });
+      })
+      .then(() => fetchRanking())
+      .catch(() => {
+        registrySyncedRef.current = null; // retry on next account change
+      });
+  }, [account, fetchRanking]);
 
   useEffect(() => {
     if (phase === 'menu') fetchRanking();
