@@ -55,7 +55,7 @@ import {
 import { pretextFor } from './game/pretexts';
 
 type Phase = 'menu' | 'playing' | 'result' | 'stageClear' | 'gameover';
-type Panel = 'none' | 'settings' | 'shop' | 'gallery';
+type Panel = 'none' | 'settings' | 'shop' | 'gallery' | 'ranking';
 
 const MAX_FILL_HOP = 3000;
 const POUNDS_NEEDED = 3;
@@ -851,6 +851,15 @@ export default function App() {
             <button onClick={() => setPanel('shop')} className="btn-difficulty">
               잡화점
             </button>
+            <button
+              onClick={() => {
+                fetchRanking();
+                setPanel('ranking');
+              }}
+              className="btn-difficulty"
+            >
+              순위
+            </button>
             {hasArtbook && (
               <button onClick={() => setPanel('gallery')} className="btn-difficulty">
                 화첩 갤러리
@@ -918,6 +927,13 @@ export default function App() {
             onBuyArtifact={handleBuyArtifact}
             onBuyRegular={handleBuyRegular}
           />
+        </PanelShell>
+      )}
+
+      {/* Ranking panel (명부 비교) */}
+      {panel === 'ranking' && (
+        <PanelShell onClose={() => setPanel('none')} title="순위 — 천하의 떡집 명부">
+          <RankingPanel entries={serverBoard} onPick={setGoodsView} />
         </PanelShell>
       )}
 
@@ -1215,6 +1231,53 @@ function AccountPanel({
           e.target.value = '';
         }}
       />
+    </div>
+  );
+}
+
+/** 명부 ranking comparison; tap a shop name to peek its 잡화. */
+function RankingPanel({
+  entries,
+  onPick,
+}: {
+  entries: ServerEntry[];
+  onPick: (e: ServerEntry) => void;
+}) {
+  return (
+    <div className="space-y-3 text-[#4a2c14]">
+      {entries.length === 0 ? (
+        <p className="opacity-75">
+          아직 명부에 오른 떡집이 없네. 「명부에 등록」하고 한 판 겨뤄 보시오!
+        </p>
+      ) : (
+        <>
+          <p className="text-sm opacity-75">
+            가게 이름을 누르면 그 집이 가진 잡화를 엿볼 수 있네.
+          </p>
+          <ol className="space-y-2">
+            {entries.map((e, i) => (
+              <li
+                key={i}
+                className="flex items-baseline justify-between gap-3 rounded-lg border-2 border-[#c9a35f] bg-white/50 px-3 py-2"
+              >
+                <span>
+                  <b className="mr-2">{i + 1}위</b>
+                  <button
+                    onClick={() => onPick(e)}
+                    className="font-bold text-[#7a4e10] underline decoration-dotted underline-offset-4 hover:text-[#4a2c14]"
+                  >
+                    {e.name}
+                  </button>
+                </span>
+                <span className="text-right">
+                  <b>{e.score}전</b>
+                  <span className="ml-2 text-sm opacity-70">{e.stage}장 도달</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
     </div>
   );
 }
