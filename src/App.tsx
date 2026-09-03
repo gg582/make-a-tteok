@@ -211,6 +211,31 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2200);
   }, []);
 
+  // On load, nudge any logged-in but unregistered shop straight into the 명부.
+  const registerAskedRef = useRef(false);
+  useEffect(() => {
+    const acc = account;
+    if (
+      registerAskedRef.current ||
+      !acc ||
+      acc.name === '나그네' ||
+      acc.registered
+    ) {
+      return;
+    }
+    registerAskedRef.current = true;
+    if (
+      window.confirm(
+        '브라우저 밖인 명부에 이름이 기록되네. 다른 떡집이랑 겨뤄 볼 수 있겠는가?'
+      )
+    ) {
+      const next: Account = { ...acc, registered: true };
+      saveAccount(next);
+      setAccount(next);
+      showToast(`${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`);
+    }
+  }, [account, showToast]);
+
   // Pull the shared 명부 ranking (best effort — offline is fine).
   const fetchRanking = useCallback(() => {
     fetch('/api/ranking')
