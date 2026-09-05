@@ -1,34 +1,34 @@
 # 평석의 달인: 한양 최고의 떡집 (Master of Pyeongseok)
 
-Fast-paced comedic 3D arcade game set in an 18th-century Hanyang marketplace.
-Customers shout exact Joseon volumes; you pour with four vessels and finish
-with three rhythmic mallet pounds — all inside a 20-second round.
+18세기 한양 장마당을 배경으로 한 빠른 템포의 코믹 3D 아케이드 게임.
+손님들이 조선식 부피 단위로 정확한 양을 외치면, 네 가지 그릇으로 담아 내고
+세 번의 리드미컬한 방망이질로 마무리한다 — 모두 20초 안에.
 
-## Stack
+## 기술 스택
 
-- **Frontend:** Vite + TypeScript + React shell, Three.js `WebGPURenderer`
-  (WGSL shaders on WebGPU, automatic WebGL2 fallback).
-- **Powder simulation:** TSL compute shaders (compiled to WGSL on WebGPU)
-  integrating 50,000 roasted-soybean-powder grains; CPU fallback included.
-- **Dough:** physical SSS-style material (transmission + sheen + clearcoat)
-  using the AI-generated rice-dough albedo.
-- **Audio:** Web Audio API — generated sanjo BGM loop with dynamic urgency
-  pitching, plus six generated SFX.
-- **Backend (optional, local dev):** Node.js client speaking the Redis wire
-  protocol to `ghcr.io/gosuda/gopherdis:1.0-simd` (see `server/`).
+- **프론트엔드:** Vite + TypeScript + React 셸, Three.js `WebGPURenderer`
+  (WebGPU에서는 WGSL 셰이더, 미지원 시 WebGL2로 자동 폴백).
+- **가루 시뮬레이션:** TSL 컴퓨트 셰이더(WebGPU에서 WGSL로 컴파일)로
+  볶은 콩가루 50,000알을 적분. CPU 폴백 포함.
+- **반죽:** 물리 기반 SSS풍 머티리얼(transmission + sheen + clearcoat)에
+  AI 생성 찹쌀 반죽 알베도 적용.
+- **오디오:** Web Audio API — 생성된 산조풍 BGM 루프(긴박감에 따라 피치
+  상승)와 여섯 종의 생성 SFX.
+- **백엔드 (선택, 로컬 개발용):** `ghcr.io/gosuda/gopherdis:1.0-simd`와
+  Redis 와이어 프로토콜로 통신하는 Node.js 클라이언트 (`server/` 참고).
 
-## Joseon metrology (strict)
+## 조선 도량형 (엄격 적용)
 
-| Unit | Radix | Base hop |
+| 단위 | 진법 | 홉 환산 |
 | ---- | ----- | -------- |
 | 1 섬 (Seom) | 15 말 | 1,500 홉 |
 | 1 말 (Mal) | 10 되 | 100 홉 |
 | 1 되 (Doe) | 10 홉 | 10 홉 |
 | 1 홉 (Hop) | — | 1 홉 |
 
-Tolerances: 0-2홉 오차 대성공 · 3-7홉 성공 · 8홉 이상 대실패.
+오차 허용: 0-2홉 오차 대성공 · 3-7홉 성공 · 8홉 이상 대실패.
 
-## Run structure (한 판의 흐름)
+## 한 판의 흐름
 
 - **한 스테이지 = 손님 20명.** 스무 분을 무사히 모시면 스테이지 클리어.
 - **실패 3번이면 그날 장사 종료** (게임 오버). 나그네 점수는 명예의 전당에
@@ -42,7 +42,7 @@ Tolerances: 0-2홉 오차 대성공 · 3-7홉 성공 · 8홉 이상 대실패.
   3명 40%, 최대 50%)하며, 방문한 날 실패를 한 번 면죄해 준다 (성공 처리,
   실패 카운트 없음). 로그인 계정 전용 — 게스트는 단골을 맺을 수 없다.
 
-## Progression (browser-local)
+## 성장 요소 (브라우저 로컬)
 
 - **계정:** 메뉴 → 설정·계정에서 이름을 올리면 로그인. 모든 데이터는
   브라우저 localStorage에만 저장되며, 설정에서 JSON 백업/불러오기가 가능.
@@ -63,56 +63,67 @@ Tolerances: 0-2홉 오차 대성공 · 3-7홉 성공 · 8홉 이상 대실패.
   주문 등장 (스테이지가 오르면 더 빨리·더 자주). 각각 따로 담아야 하며
   오차는 합산 평가. 검은 콩을 부으면 가루·반죽이 어두워진다.
 
-## Difficulty modes
+## 난이도 모드
 
-- **보통 (normal):** orders arrive decomposed, e.g. "찰떡 1섬 4말 2되".
-- **고난도 (hard, toggle on the menu):** orders arrive as a single flat
-  unit — "찰떡 40말", "찰떡 24되" — so the player converts exactly ONE radix
-  step mentally (40말 = 2섬 10말, 24되 = 2말 4되). Two-step conversions are
-  never issued. Hard rounds pay 1.5x score.
+- **보통:** 주문이 분해된 형태로 온다. 예: "찰떡 1섬 4말 2되".
+- **고난도 (메뉴에서 토글):** 주문이 하나의 펼친 단위로 온다 —
+  "찰떡 40말", "찰떡 24되" — 그래서 플레이어가 정확히 한 단계의 진법 변환을
+  암산해야 한다 (40말 = 2섬 10말, 24되 = 2말 4되). 두 단계 변환은 출제되지
+  않는다. 고난도 라운드는 점수 1.5배.
 
-## Run
+## 실행
 
 ```bash
 npm install
-npm run dev        # frontend
-npm test           # vitest metrology suite (24 tests)
-npm run build      # production build
+npm run dev        # 프론트엔드
+npm test           # vitest 도량형 테스트 (24개)
+npm run build      # 프로덕션 빌드
 
-# Optional gopherdis-backed session server (local only):
+# gopherdis 기반 세션 서버 (선택, 로컬 전용):
 docker compose up -d
 cd server && npm install && npm start
 ```
 
-> The deployed preview runs fully client-side; scores are stored in the
-> browser's localStorage. The gopherdis backend (`server/index.js` +
-> `docker-compose.yml`) is provided for self-hosted sessions, daily
-> leaderboards (`ZADD leaderboard:daily`), and lobby broadcasts
-> (`PUBLISH tteok:events`).
+## 배포 (GitHub Pages)
 
-## Generated assets (`public/assets/`)
+`main` 브랜치에 push하면 GitHub Actions(`.github/workflows/deploy.yml`)가
+자동으로 빌드해 GitHub Pages에 배포한다. 저장소 Settings → Pages → Source를
+**GitHub Actions**로 설정해야 한다.
 
-All synthesized by AI generation pipelines — no placeholders:
+> **주의: GitHub Pages 배포본에는 DB/서버가 붙지 않는다.** GitHub Pages는
+> 정적 호스팅이라 Node 서버(`server/index.js`)와 gopherdis를 띄울 수 없다.
+> 따라서 배포본에서 `/api/ranking` 호출은 실패하며, 공유 명부(랭킹) 기능은
+> 동작하지 않는다. 점수·계정 등 나머지 모든 데이터는 브라우저 localStorage에
+> 저장되고 게임 진행에는 영향이 없다. 공유 랭킹을 쓰려면 백엔드를 별도
+> 호스팅(Render, Fly.io 등)에 올리고 프록시/도메인을 연결해야 한다.
+>
+> gopherdis 백엔드(`server/index.js` + `docker-compose.yml`)는 셀프 호스팅용으로
+> 제공되며, 일일 리더보드(`ZADD leaderboard:daily`)와 로비 브로드캐스트
+> (`PUBLISH tteok:events`)를 지원한다.
 
-- `textures/rice_dough_albedo.png` — translucent glutinous rice dough
+## 생성 에셋 (`public/assets/`)
+
+모두 AI 생성 파이프라인으로 만든 것 — 플레이스홀더 없음:
+
+- `textures/rice_dough_albedo.png` — 반투명 찹쌀 반죽
 - `textures/soybean_powder_albedo.png` / `soybean_powder_normal.png` —
-  roasted soybean powder (normal map derived from the albedo)
-- `textures/pine_wood_worn.png` — flour-dusted worn pine wood
-- `textures/sangpyeong_tongbo.png` — Joseon copper coin (常平通寶)
-- `audio/bgm_sanjo_fast.mp3` — upbeat sanjo-style loop (gayageum / piri /
-  janggu, ~140 BPM; generator caps at 22 s, looped seamlessly in-game)
+  볶은 콩가루 (노멀 맵은 알베도에서 유도)
+- `textures/pine_wood_worn.png` — 밀가루 묻은 낡은 소나무
+- `textures/sangpyeong_tongbo.png` — 조선 동전 (常平通寶)
+- `audio/bgm_sanjo_fast.mp3` — 신나는 산조풍 루프 (가야금 / 피리 /
+  장구, ~140 BPM; 생성기 상한 22초, 게임 내 무매끝 루프)
 - `audio/sfx/*.wav` — thud_sack, pour_grain, clatter_wood, mallet_strike,
-  coin_toss, cauldron_flip (generated mp3, converted to wav for latency)
+  coin_toss, cauldron_flip (mp3로 생성 후 지연 최소화를 위해 wav 변환)
 
-## Source layout
+## 소스 구조
 
 ```
-src/game/metrology.ts        15-radix volume engine (pure, unit-tested)
-src/game/metrology.test.ts   vitest suite — radix boundaries & tolerances
-src/game/audio.ts            Web Audio director (BGM pitching, SFX)
-src/game/powder.ts           TSL/WGSL compute particles + CPU fallback
-src/game/procedural-assets.ts stylized compound meshes (Gat, Dopo, vessels)
-src/game/scene.ts            WebGPURenderer stage, animations, camera shake
-src/App.tsx                  game state machine + Korean HUD
-server/                      gopherdis Redis-wire API + Lua atomic scripts
+src/game/metrology.ts        15진법 부피 엔진 (순수 함수, 단위 테스트 있음)
+src/game/metrology.test.ts   vitest 스위트 — 진법 경계 & 오차 허용
+src/game/audio.ts            Web Audio 디렉터 (BGM 피칭, SFX)
+src/game/powder.ts           TSL/WGSL 컴퓨트 파티클 + CPU 폴백
+src/game/procedural-assets.ts 스타일라이즈드 합성 메시 (갓, 도포, 그릇)
+src/game/scene.ts            WebGPURenderer 무대, 애니메이션, 카메라 셰이크
+src/App.tsx                  게임 상태 머신 + 한국어 HUD
+server/                      gopherdis Redis-와이어 API + Lua 원자 스크립트
 ```
