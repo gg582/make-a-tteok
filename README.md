@@ -26,7 +26,7 @@ with three rhythmic mallet pounds — all inside a 20-second round.
 | 1 되 (Doe) | 10 홉 | 10 홉 |
 | 1 홉 (Hop) | — | 1 홉 |
 
-Tolerances: 0~2홉 오차 대성공 · 3~7홉 성공 · 8홉 이상 대실패.
+Tolerances: 0-2홉 오차 대성공 · 3-7홉 성공 · 8홉 이상 대실패.
 
 ## Run structure (한 판의 흐름)
 
