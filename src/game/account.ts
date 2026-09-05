@@ -40,11 +40,11 @@ export const ARTBOOKS: Record<
     desc: '푸른 도포의 미소년 양반. 부채 끝에 봄바람이 맴돌더이다.',
     covers: '젊은 양반 손님과 노인·중년 손님이 미형으로 다시 찾아오네.',
     price: 9000,
-    texture: '/assets/textures/artbook_1.png',
+    texture: 'assets/textures/artbook_1.png',
     gallery: [
-      '/assets/textures/artbook_1.png',
-      '/assets/textures/artbook_elder.png',
-      '/assets/textures/artbook_middle.png',
+      'assets/textures/artbook_1.png',
+      'assets/textures/artbook_elder.png',
+      'assets/textures/artbook_middle.png',
     ],
   },
   artbook_2: {
@@ -52,11 +52,11 @@ export const ARTBOOKS: Record<
     desc: '분홍 저고리의 미소녀 낭자. 웃으면 저잣거리가 환해지더이다.',
     covers: '젊은 낭자 손님과 할멈·중년 손님이 미형으로 다시 찾아오네.',
     price: 12000,
-    texture: '/assets/textures/artbook_2.png',
+    texture: 'assets/textures/artbook_2.png',
     gallery: [
-      '/assets/textures/artbook_2.png',
-      '/assets/textures/artbook_granny.png',
-      '/assets/textures/artbook_middle.png',
+      'assets/textures/artbook_2.png',
+      'assets/textures/artbook_granny.png',
+      'assets/textures/artbook_middle.png',
     ],
   },
   artbook_3: {
@@ -64,11 +64,11 @@ export const ARTBOOKS: Record<
     desc: '냉소적인 미소년 보부상. 계산은 칼같이, 마음은…?',
     covers: '보부상 손님과 노인·할멈 손님이 미형으로 다시 찾아오네.',
     price: 15000,
-    texture: '/assets/textures/artbook_3.png',
+    texture: 'assets/textures/artbook_3.png',
     gallery: [
-      '/assets/textures/artbook_3.png',
-      '/assets/textures/artbook_elder.png',
-      '/assets/textures/artbook_granny.png',
+      'assets/textures/artbook_3.png',
+      'assets/textures/artbook_elder.png',
+      'assets/textures/artbook_granny.png',
     ],
   },
 };

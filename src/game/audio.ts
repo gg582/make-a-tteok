@@ -4,18 +4,18 @@
  * playback rate that rises as the round timer runs out.
  */
 
-const BGM_URL = '/assets/audio/bgm_sanjo_fast.mp3';
+const BGM_URL = 'assets/audio/bgm_sanjo_fast.mp3';
 
 const SFX_URLS: Record<string, string> = {
-  thud_sack: '/assets/audio/sfx/thud_sack.wav',
-  pour_grain: '/assets/audio/sfx/pour_grain.wav',
-  clatter_wood: '/assets/audio/sfx/clatter_wood.wav',
-  mallet_strike: '/assets/audio/sfx/mallet_strike.wav',
-  coin_toss: '/assets/audio/sfx/coin_toss.wav',
-  cauldron_flip: '/assets/audio/sfx/cauldron_flip.wav',
+  thud_sack: 'assets/audio/sfx/thud_sack.wav',
+  pour_grain: 'assets/audio/sfx/pour_grain.wav',
+  clatter_wood: 'assets/audio/sfx/clatter_wood.wav',
+  mallet_strike: 'assets/audio/sfx/mallet_strike.wav',
+  coin_toss: 'assets/audio/sfx/coin_toss.wav',
+  cauldron_flip: 'assets/audio/sfx/cauldron_flip.wav',
   // A light metallic tick for the 1-hop spoon: reuse the coin jingle,
   // pitched up and shortened at playback time.
-  coin_tick: '/assets/audio/sfx/coin_toss.wav',
+  coin_tick: 'assets/audio/sfx/coin_toss.wav',
 };
 
 export class AudioDirector {

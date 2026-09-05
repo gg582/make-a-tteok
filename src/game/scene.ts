@@ -27,9 +27,9 @@ interface FaceSet {
   angry: string;
 }
 const face = (base: string): FaceSet => ({
-  neutral: `/assets/textures/${base}.png`,
-  happy: `/assets/textures/${base}_happy.png`,
-  angry: `/assets/textures/${base}_angry.png`,
+  neutral: `assets/textures/${base}.png`,
+  happy: `assets/textures/${base}_happy.png`,
+  angry: `assets/textures/${base}_angry.png`,
 });
 
 const CUSTOMER_SETS: Array<{ chibi: FaceSet; artbook: FaceSet }> = [
@@ -146,9 +146,9 @@ export class TteokScene {
       t.repeat.set(repeat, repeat);
       return t;
     };
-    const woodTex = tex('/assets/textures/pine_wood_worn.png');
-    const riceTex = tex('/assets/textures/rice_dough_albedo.png', 2);
-    this.coinTex = tex('/assets/textures/sangpyeong_tongbo.png');
+    const woodTex = tex('assets/textures/pine_wood_worn.png');
+    const riceTex = tex('assets/textures/rice_dough_albedo.png', 2);
+    this.coinTex = tex('assets/textures/sangpyeong_tongbo.png');
     this.coinTex.wrapS = this.coinTex.wrapT = THREE.ClampToEdgeWrapping;
     // Await sprite textures so aspect ratios are known before rig creation.
     const loadTex = async (u: string) => {
@@ -166,7 +166,7 @@ export class TteokScene {
     this.artbookExtraTexs = await Promise.all(ARTBOOK_EXTRA.map(loadFace));
 
     // 2.5D painted backdrop (Hanyang market), slightly curved vignette feel.
-    const backdropTex = loader.load('/assets/textures/market_backdrop.jpg');
+    const backdropTex = loader.load('assets/textures/market_backdrop.jpg');
     backdropTex.colorSpace = THREE.SRGBColorSpace;
     const backdrop = new THREE.Mesh(
       new THREE.PlaneGeometry(34, 19.1),
@@ -232,7 +232,7 @@ export class TteokScene {
     this.scene.add(this.dough);
 
     // Mallet sprite leaning beside the basin.
-    const malletTex = await loader.loadAsync('/assets/textures/mallet_sprite.png');
+    const malletTex = await loader.loadAsync('assets/textures/mallet_sprite.png');
     malletTex.colorSpace = THREE.SRGBColorSpace;
     this.mallet = new MalletSprite(malletTex, 1.5);
     this.mallet.setPosition(1.9, BASIN_POS.y + 1.15, BASIN_POS.z + 0.1);

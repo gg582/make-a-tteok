@@ -908,7 +908,10 @@ export default function App() {
       {/* Menu overlay */}
       {phase === 'menu' && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center overflow-y-auto bg-gradient-to-b from-black/70 via-black/40 to-black/70 p-6">
-          <div className="coin-emblem" />
+          <div
+            className="coin-emblem"
+            style={{ backgroundImage: "url('assets/textures/sangpyeong_tongbo.png')" }}
+          />
           <h1 className="mt-4 text-6xl text-amber-100 drop-shadow-[0_4px_0_rgba(0,0,0,0.6)]">
             평석의 달인
           </h1>
