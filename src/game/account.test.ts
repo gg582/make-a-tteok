@@ -7,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
   createGuest,
+  syncWithServer,
 } from './account';
 
 describe('account authentication & password system', () => {
@@ -121,5 +122,35 @@ describe('account authentication & password system', () => {
     const loginB = await login('가게B', false, 'pwB');
     expect(loginB.success).toBe(true);
     expect(loadAccount()?.name).toBe('가게B');
+  });
+
+  it('syncWithServer updates money, bestScore, and goods from server record', () => {
+    const acc = createGuest();
+    acc.name = '평석의 달인';
+    acc.money = 0;
+    acc.bestScore = 0;
+    acc.totalEarned = 0;
+
+    const serverEntry = {
+      score: 57847,
+      stage: 5,
+      goods: {
+        artbooks: ['「청포도련님」 화첩'],
+        artifacts: { sangaji: 3, jupan: 0 },
+        regulars: ['이모부 반장님'],
+      },
+    };
+
+    const synced = syncWithServer(acc, serverEntry);
+    expect(synced.money).toBe(57847);
+    expect(synced.bestScore).toBe(57847);
+    expect(synced.totalEarned).toBe(57847);
+    expect(synced.ownedArtbooks).toContain('artbook_1');
+    expect(synced.artifacts.sangaji).toBe(3);
+    expect(synced.regulars).toContain('banjangnim');
+
+    // Also verified persisted in store
+    const stored = getStoredAccount('평석의 달인');
+    expect(stored?.money).toBe(57847);
   });
 });

@@ -36,6 +36,7 @@ import {
   recordEarnings,
   saveAccount,
   setAccountPassword,
+  syncWithServer,
   getStoredAccount,
   useArtifact,
   type Account,
@@ -249,7 +250,17 @@ export default function App() {
     fetch('/api/ranking')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data: { ranking?: ServerEntry[] }) => {
-        if (Array.isArray(data.ranking)) setServerBoard(data.ranking);
+        if (Array.isArray(data.ranking)) {
+          setServerBoard(data.ranking);
+          const currentAcc = accountRef.current;
+          if (currentAcc && currentAcc.name !== '나그네') {
+            const mine = data.ranking.find((e) => e.name === currentAcc.name);
+            if (mine && (mine.score > currentAcc.money || mine.score > currentAcc.bestScore)) {
+              const synced = syncWithServer(currentAcc, mine);
+              setAccount(synced);
+            }
+          }
+        }
       })
       .catch(() => {});
   }, []);
@@ -279,8 +290,8 @@ export default function App() {
     [fetchRanking, showToast]
   );
 
-  // On first access, reconcile local account vs the 명부 record: missing
-  // entries get created, stale scores/goods get overwritten with local truth.
+  // On first access or login, reconcile local account vs the 명부 record:
+  // restore money/goods from server if available, and update server if local has better progress.
   const registrySyncedRef = useRef<string | null>(null);
   useEffect(() => {
     const acc = account;
@@ -292,12 +303,25 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data: { ranking?: ServerEntry[] }) => {
         const mine = (data.ranking ?? []).find((e) => e.name === acc.name);
-        const sameGoods =
-          !!mine && JSON.stringify(mine.goods) === JSON.stringify(goods);
-        const score = Math.max(acc.bestScore, mine?.score ?? 0);
-        const stage = Math.max(1, mine?.stage ?? 1);
-        if (mine && sameGoods && mine.score >= acc.bestScore) return; // in sync
-        if (score <= 0) return; // nothing worth engraving yet
+        if (!mine) {
+          if (acc.bestScore <= 0) return;
+          return fetch('/api/ranking', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: acc.name, score: acc.bestScore, stage: 1, goods }),
+          });
+        }
+
+        // If server has ranking data, ensure local account has at least that money/progress
+        if (mine.score > acc.money || mine.score > acc.bestScore || (mine.goods && JSON.stringify(mine.goods) !== JSON.stringify(goods))) {
+          const synced = syncWithServer(acc, mine);
+          setAccount(synced);
+        }
+
+        const sameGoods = JSON.stringify(mine.goods) === JSON.stringify(goods);
+        const score = Math.max(acc.bestScore, mine.score);
+        const stage = Math.max(1, mine.stage ?? 1);
+        if (sameGoods && mine.score >= acc.bestScore) return; // in sync
         return fetch('/api/ranking', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -633,13 +657,28 @@ export default function App() {
         }
         return { success: false, reason: res.reason };
       }
-      const acc = res.account;
+      let acc = res.account;
+
+      // Sync with server 명부 immediately to restore money, totalEarned, goods
+      try {
+        const rankingRes = await fetch('/api/ranking');
+        if (rankingRes.ok) {
+          const data = (await rankingRes.json()) as { ranking?: ServerEntry[] };
+          const mine = (data.ranking ?? []).find((e) => e.name === acc.name);
+          if (mine) {
+            acc = syncWithServer(acc, mine);
+          }
+        }
+      } catch {
+        // Offline / server unreachable is fine
+      }
+
       setAccount(acc);
       if (acc.activeArtbooks.length > 0) {
         sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
       }
       showToast(
-        registered
+        registered || acc.registered
           ? `${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`
           : `${acc.name} 님, 어서 오시오!`
       );

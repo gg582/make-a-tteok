@@ -449,3 +449,74 @@ export function useArtifact(
   };
   return [next, rng() < ARTIFACTS[id].successRate];
 }
+
+/**
+ * Merge an account with data from the server 명부 (ranking entry).
+ * Ensures money, totalEarned, and bestScore reflect at least the server's record,
+ * and merges any owned artbooks, artifacts, and regulars.
+ */
+export function syncWithServer(
+  acc: Account,
+  serverEntry?: {
+    score: number;
+    stage?: number;
+    goods?: {
+      artbooks?: string[];
+      artifacts?: { sangaji?: number; jupan?: number };
+      regulars?: string[];
+    } | null;
+  } | null
+): Account {
+  if (!serverEntry) return acc;
+
+  const serverScore = typeof serverEntry.score === 'number' ? serverEntry.score : 0;
+  const mergedMoney = Math.max(acc.money, serverScore);
+  const mergedTotal = Math.max(acc.totalEarned, serverScore);
+  const mergedBest = Math.max(acc.bestScore, serverScore);
+
+  let mergedArtbooks = [...acc.ownedArtbooks];
+  let mergedRegulars = [...acc.regulars];
+  const mergedArtifacts = { ...acc.artifacts };
+
+  if (serverEntry.goods) {
+    const { artbooks, artifacts, regulars } = serverEntry.goods;
+    if (Array.isArray(artbooks)) {
+      for (const [id, def] of Object.entries(ARTBOOKS)) {
+        if (artbooks.includes(def.name) && !mergedArtbooks.includes(id as ArtbookId)) {
+          mergedArtbooks.push(id as ArtbookId);
+        }
+      }
+    }
+    if (artifacts && typeof artifacts === 'object') {
+      if (typeof artifacts.sangaji === 'number') {
+        mergedArtifacts.sangaji = Math.max(mergedArtifacts.sangaji, artifacts.sangaji);
+      }
+      if (typeof artifacts.jupan === 'number') {
+        mergedArtifacts.jupan = Math.max(mergedArtifacts.jupan, artifacts.jupan);
+      }
+    }
+    if (Array.isArray(regulars)) {
+      for (const def of REGULARS) {
+        if (
+          (regulars.includes(def.name) || regulars.includes(def.id)) &&
+          !mergedRegulars.includes(def.id)
+        ) {
+          mergedRegulars.push(def.id);
+        }
+      }
+    }
+  }
+
+  const updated: Account = {
+    ...acc,
+    money: mergedMoney,
+    totalEarned: mergedTotal,
+    bestScore: mergedBest,
+    ownedArtbooks: mergedArtbooks,
+    regulars: mergedRegulars,
+    artifacts: mergedArtifacts,
+  };
+
+  saveAccount(updated);
+  return updated;
+}
