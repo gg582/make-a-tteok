@@ -35,6 +35,8 @@ import {
   logout,
   recordEarnings,
   saveAccount,
+  setAccountPassword,
+  getStoredAccount,
   useArtifact,
   type Account,
   type ArtbookId,
@@ -616,18 +618,51 @@ export default function App() {
   );
 
   // --- Account / panels -------------------------------------------------------
-  const handleLogin = useCallback((name: string, registered = false) => {
-    const acc = login(name, registered);
-    setAccount(acc);
-    if (acc.activeArtbooks.length > 0) {
-      sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
-    }
-    showToast(
-      registered
-        ? `${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`
-        : `${acc.name} 님, 어서 오시오!`
-    );
-  }, [showToast]);
+  const handleLogin = useCallback(
+    async (
+      name: string,
+      registered = false,
+      password?: string
+    ): Promise<{ success: boolean; reason?: string }> => {
+      const res = await login(name, registered, password);
+      if (!res.success) {
+        if (res.reason === 'PASSWORD_REQUIRED') {
+          showToast('비밀번호가 설정된 상호네! 비밀번호를 입력하시오.');
+        } else if (res.reason === 'INVALID_PASSWORD') {
+          showToast('비밀번호가 틀렸네! 다시 확인하시오.');
+        }
+        return { success: false, reason: res.reason };
+      }
+      const acc = res.account;
+      setAccount(acc);
+      if (acc.activeArtbooks.length > 0) {
+        sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
+      }
+      showToast(
+        registered
+          ? `${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`
+          : `${acc.name} 님, 어서 오시오!`
+      );
+      return { success: true };
+    },
+    [showToast]
+  );
+
+  const handleUpdatePassword = useCallback(
+    async (newPassword: string | null): Promise<boolean> => {
+      const acc = accountRef.current;
+      if (!acc || acc.name === '나그네') return false;
+      const updated = await setAccountPassword(acc, newPassword);
+      setAccount(updated);
+      if (newPassword && newPassword.trim()) {
+        showToast('비밀번호가 설정되었네! 다음 로그인부터 비번이 필요하네.');
+      } else {
+        showToast('비밀번호가 해제되었네! 이제 상호만으로 로그인되네.');
+      }
+      return true;
+    },
+    [showToast]
+  );
 
   const handleRegister = useCallback(() => {
     const acc = accountRef.current;
@@ -1005,6 +1040,7 @@ export default function App() {
             account={account}
             isLoggedIn={isLoggedIn}
             onLogin={handleLogin}
+            onUpdatePassword={handleUpdatePassword}
             onRegister={handleRegister}
             onLogout={handleLogout}
             onExport={handleExport}
@@ -1223,6 +1259,7 @@ function AccountPanel({
   account,
   isLoggedIn,
   onLogin,
+  onUpdatePassword,
   onRegister,
   onLogout,
   onExport,
@@ -1230,14 +1267,46 @@ function AccountPanel({
 }: {
   account: Account | null;
   isLoggedIn: boolean;
-  onLogin: (name: string, registered?: boolean) => void;
+  onLogin: (
+    name: string,
+    registered?: boolean,
+    password?: string
+  ) => Promise<{ success: boolean; reason?: string }>;
+  onUpdatePassword: (newPassword: string | null) => Promise<boolean>;
   onRegister: () => void;
   onLogout: () => void;
   onExport: () => void;
   onImport: (f: File) => void;
 }) {
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const targetStored = getStoredAccount(name);
+  const nameHasPw = !!(targetStored?.passwordHash && targetStored?.passwordSalt);
+
+  const handleDoLogin = async (registered = false) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setStatusMsg('');
+    const res = await onLogin(trimmed, registered, password);
+    if (!res.success) {
+      if (res.reason === 'PASSWORD_REQUIRED') {
+        setShowPasswordInput(true);
+        setStatusMsg('이 상호는 비밀번호가 걸려 있네! 비번을 입력하시오.');
+      } else if (res.reason === 'INVALID_PASSWORD') {
+        setStatusMsg('비밀번호가 일치하지 않네! 다시 입력하시오.');
+      }
+    } else {
+      setPassword('');
+      setShowPasswordInput(false);
+    }
+  };
+
   const handleRegistrySignup = () => {
     if (!name.trim()) return;
     if (
@@ -1245,9 +1314,31 @@ function AccountPanel({
         '브라우저 밖인 명부에 이름이 기록되네. 다른 떡집이랑 겨뤄 볼 수 있겠는가?'
       )
     ) {
-      onLogin(name, true);
+      handleDoLogin(true);
     }
   };
+
+  const handleTogglePassword = async () => {
+    if (!account) return;
+    if (account.passwordHash) {
+      // Switch to passwordless
+      if (window.confirm('비밀번호를 해제하고 암호 없는 계정으로 전환하겠는가?')) {
+        await onUpdatePassword(null);
+        setIsChangingPassword(false);
+        setNewPassword('');
+      }
+    } else {
+      // Set password
+      if (!newPassword.trim()) {
+        setStatusMsg('설정할 비밀번호를 입력하시오.');
+        return;
+      }
+      await onUpdatePassword(newPassword.trim());
+      setIsChangingPassword(false);
+      setNewPassword('');
+    }
+  };
+
   return (
     <div className="space-y-4 text-[#4a2c14]">
       {isLoggedIn ? (
@@ -1259,10 +1350,57 @@ function AccountPanel({
                 명부 등재
               </span>
             )}
+            <span
+              className={`ml-2 rounded-full px-2 py-0.5 text-sm ${
+                account!.passwordHash
+                  ? 'bg-emerald-700 text-emerald-50'
+                  : 'bg-stone-500 text-stone-100'
+              }`}
+            >
+              {account!.passwordHash ? '암호 보호 중' : '암호 없음'}
+            </span>
           </p>
           <p className="text-sm opacity-80">
-            계정은 이 브라우저에만 저장되네. 다른 기기로 옮기려면 JSON 백업을 쓰시오.
+            동일 상호명을 입력하면 언제든 이 계정으로 다시 로그인할 수 있네.
           </p>
+
+          {/* Password Management */}
+          <div className="rounded-xl border-2 border-[#a4712f] bg-white/60 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-base">
+                보안: {account!.passwordHash ? '비밀번호 사용 중' : '암호 없음 (누구나 상호로 진입)'}
+              </span>
+              <button
+                onClick={() => {
+                  if (account!.passwordHash) {
+                    handleTogglePassword();
+                  } else {
+                    setIsChangingPassword((v) => !v);
+                  }
+                }}
+                className="btn-panel text-sm py-1 px-3"
+              >
+                {account!.passwordHash ? '암호 해제 (무암호 전환)' : isChangingPassword ? '취소' : '비밀번호 설정'}
+              </button>
+            </div>
+
+            {!account!.passwordHash && isChangingPassword && (
+              <div className="flex gap-2 pt-2">
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="설정할 새 비밀번호"
+                  className="flex-1 rounded-lg border-2 border-[#a4712f] bg-white/90 px-3 py-1.5 text-base"
+                />
+                <button onClick={handleTogglePassword} className="btn-panel text-sm py-1.5 px-3">
+                  암호 등록
+                </button>
+              </div>
+            )}
+            {statusMsg && <p className="text-xs text-red-600">{statusMsg}</p>}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button onClick={onExport} className="btn-panel">
               JSON으로 백업
@@ -1288,24 +1426,66 @@ function AccountPanel({
       ) : (
         <>
           <p className="text-xl">
-            지금은 <b>나그네</b>로 장사 중이네. 돈은 벌 수 있지만 저장되지 않고,
-            화첩·아티팩트는 살 수 없네!
+            지금은 <b>나그네</b>로 장사 중이네. 이전에 쓰던 <b>상호명</b>을 입력하면
+            해당 계정으로 로그인되어 곳간과 화첩을 이어갈 수 있네!
           </p>
-          <div className="flex gap-2">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="상호를 적어 주시오 (예: 평석이)"
-              className="flex-1 rounded-lg border-2 border-[#a4712f] bg-white/80 px-3 py-2 text-lg"
-              maxLength={12}
-            />
-            <button onClick={() => name.trim() && onLogin(name)} className="btn-panel">
-              장부에 이름 올리기
-            </button>
+
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setStatusMsg('');
+                }}
+                placeholder="상호를 적어 주시오 (예: 평석이)"
+                className="flex-1 rounded-lg border-2 border-[#a4712f] bg-white/80 px-3 py-2 text-lg"
+                maxLength={12}
+              />
+              <button onClick={() => handleDoLogin(false)} className="btn-panel">
+                장부에 이름 올리기 / 로그인
+              </button>
+            </div>
+
+            {(showPasswordInput || nameHasPw) && (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setStatusMsg('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleDoLogin(false);
+                  }}
+                  placeholder="비밀번호를 입력하시오"
+                  className="flex-1 rounded-lg border-2 border-[#a4712f] bg-white/80 px-3 py-2 text-base"
+                />
+                <button onClick={() => handleDoLogin(false)} className="btn-panel">
+                  확인
+                </button>
+              </div>
+            )}
+
+            {!showPasswordInput && !nameHasPw && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordInput(true)}
+                  className="text-xs text-amber-900 underline decoration-dotted opacity-80 hover:opacity-100"
+                >
+                  + 비밀번호를 함께 설정하거나 입력하려면 누르시오
+                </button>
+              </div>
+            )}
+
+            {statusMsg && <p className="text-sm font-bold text-red-600">{statusMsg}</p>}
           </div>
+
           <div className="flex gap-2">
             <button onClick={handleRegistrySignup} className="btn-panel">
-              명부에 등록 후 가입
+              명부에 등록 후 가입/로그인
             </button>
           </div>
           <div className="flex gap-2">

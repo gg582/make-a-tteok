@@ -146,6 +146,87 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Account password management (stored with PBKDF2 hash & salt in Redis)
+    if (req.method === 'POST' && req.url === '/api/account/login') {
+      const { name, password } = await readBody(req);
+      if (typeof name !== 'string' || !name.trim()) {
+        return send(res, 400, { error: 'name required' });
+      }
+      const cleanName = name.trim().slice(0, 12);
+      const acc = await redis.hGetAll(`account:${cleanName}`);
+      if (!acc || !acc.passwordHash) {
+        // Passwordless account
+        return send(res, 200, { ok: true, hasPassword: false });
+      }
+      if (!password) {
+        return send(res, 401, { error: 'PASSWORD_REQUIRED', hasPassword: true });
+      }
+      const enc = new TextEncoder();
+      const saltBuf = Buffer.from(acc.passwordSalt, 'hex');
+      const km = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+      const derived = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+        km,
+        256
+      );
+      const computedHash = Buffer.from(derived).toString('hex');
+      if (computedHash !== acc.passwordHash) {
+        return send(res, 401, { error: 'INVALID_PASSWORD', hasPassword: true });
+      }
+      return send(res, 200, { ok: true, hasPassword: true });
+    }
+
+    if (req.method === 'POST' && req.url === '/api/account/password') {
+      const { name, currentPassword, newPassword } = await readBody(req);
+      if (typeof name !== 'string' || !name.trim()) {
+        return send(res, 400, { error: 'name required' });
+      }
+      const cleanName = name.trim().slice(0, 12);
+      const acc = await redis.hGetAll(`account:${cleanName}`);
+      const enc = new TextEncoder();
+
+      // If already has password, verify currentPassword first
+      if (acc && acc.passwordHash) {
+        if (!currentPassword) {
+          return send(res, 401, { error: 'CURRENT_PASSWORD_REQUIRED' });
+        }
+        const saltBuf = Buffer.from(acc.passwordSalt, 'hex');
+        const km = await crypto.subtle.importKey('raw', enc.encode(currentPassword), 'PBKDF2', false, ['deriveBits']);
+        const derived = await crypto.subtle.deriveBits(
+          { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+          km,
+          256
+        );
+        const computed = Buffer.from(derived).toString('hex');
+        if (computed !== acc.passwordHash) {
+          return send(res, 401, { error: 'INVALID_PASSWORD' });
+        }
+      }
+
+      if (!newPassword || !newPassword.trim()) {
+        // Toggle to passwordless
+        await redis.del(`account:${cleanName}`);
+        return send(res, 200, { ok: true, passwordless: true });
+      }
+
+      // Hash new password
+      const salt = randomUUID().replace(/-/g, '');
+      const saltBuf = Buffer.from(salt, 'hex');
+      const km = await crypto.subtle.importKey('raw', enc.encode(newPassword.trim()), 'PBKDF2', false, ['deriveBits']);
+      const derived = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+        km,
+        256
+      );
+      const hash = Buffer.from(derived).toString('hex');
+      await redis.hSet(`account:${cleanName}`, {
+        passwordSalt: salt,
+        passwordHash: hash,
+        updatedAt: String(Date.now()),
+      });
+      return send(res, 200, { ok: true, passwordless: false });
+    }
+
     send(res, 404, { error: 'not found' });
   } catch (err) {
     console.error(err);

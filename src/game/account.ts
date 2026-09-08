@@ -21,6 +21,10 @@ export interface Account {
   regulars: RegularId[];
   /** Registered in the shared 명부 — scores go to the server ranking. */
   registered: boolean;
+  /** Hex-encoded salt for PBKDF2. Undefined/empty means passwordless. */
+  passwordSalt?: string;
+  /** Hex-encoded PBKDF2 hash. Undefined/empty means passwordless. */
+  passwordHash?: string;
 }
 
 export const ARTBOOKS: Record<
@@ -151,6 +155,7 @@ export function buyRegular(acc: Account, id: RegularId): Account | null {
 }
 
 const LS_KEY = 'tteok:account';
+const LS_STORE_KEY = 'tteok:accounts';
 const GUEST_NAME = '나그네';
 
 export function createGuest(): Account {
@@ -180,6 +185,79 @@ function migrateArtbooks(raw: Record<string, unknown>, acc: Account): Account {
   return acc;
 }
 
+/** PBKDF2 hash using Web Crypto API — no plaintext passwords stored. */
+export async function hashPassword(
+  plain: string,
+  saltHex?: string
+): Promise<{ salt: string; hash: string }> {
+  const enc = new TextEncoder();
+  const salt = saltHex
+    ? new Uint8Array(saltHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)))
+    : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(plain),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  const derivedHash = Array.from(new Uint8Array(derived))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const finalSalt = Array.from(salt)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return { salt: finalSalt, hash: derivedHash };
+}
+
+export async function verifyPassword(
+  plain: string,
+  saltHex: string,
+  expectedHash: string
+): Promise<boolean> {
+  const { hash } = await hashPassword(plain, saltHex);
+  return hash === expectedHash;
+}
+
+function loadStore(): Record<string, Account> {
+  try {
+    const raw = localStorage.getItem(LS_STORE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, Partial<Account> & Record<string, unknown>>;
+    const store: Record<string, Account> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (val && typeof val.name === 'string') {
+        const base = migrateArtbooks(val, { ...createGuest(), ...val } as Account);
+        store[key] = base;
+      }
+    }
+    return store;
+  } catch {
+    return {};
+  }
+}
+
+function saveStore(store: Record<string, Account>): void {
+  localStorage.setItem(LS_STORE_KEY, JSON.stringify(store));
+}
+
+export function getStoredAccount(name: string): Account | null {
+  const trimmed = name.trim().slice(0, 12);
+  if (!trimmed || trimmed === GUEST_NAME) return null;
+  const store = loadStore();
+  return store[trimmed] ?? null;
+}
+
 export function loadAccount(): Account | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -189,25 +267,103 @@ export function loadAccount(): Account | null {
       ...createGuest(),
       ...parsed,
     } as Account);
-    return acc.name === GUEST_NAME ? null : acc;
+    if (acc.name === GUEST_NAME) return null;
+    // Keep store in sync if not already present
+    const store = loadStore();
+    if (!store[acc.name]) {
+      store[acc.name] = acc;
+      saveStore(store);
+    }
+    return acc;
   } catch {
     return null;
   }
 }
 
 export function saveAccount(acc: Account): void {
+  if (acc.name !== GUEST_NAME) {
+    const store = loadStore();
+    store[acc.name] = acc;
+    saveStore(store);
+  }
   localStorage.setItem(LS_KEY, JSON.stringify(acc));
 }
 
-export function login(name: string, registered = false): Account {
+export type LoginResult =
+  | { success: true; account: Account }
+  | { success: false; reason: 'PASSWORD_REQUIRED' | 'INVALID_PASSWORD' };
+
+export async function login(
+  name: string,
+  registered = false,
+  password?: string
+): Promise<LoginResult> {
   const trimmed = name.trim().slice(0, 12) || GUEST_NAME;
-  const existing = loadAccount();
-  const acc =
-    existing && existing.name === trimmed
-      ? { ...existing, registered: existing.registered || registered }
-      : { ...createGuest(), name: trimmed, registered };
+  if (trimmed === GUEST_NAME) {
+    return { success: true, account: createGuest() };
+  }
+
+  // Check stored accounts first, then fallback to currently loaded account
+  const store = loadStore();
+  const existing = store[trimmed] ?? (loadAccount()?.name === trimmed ? loadAccount() : null);
+
+  if (existing) {
+    if (existing.passwordHash && existing.passwordSalt) {
+      if (!password) {
+        return { success: false, reason: 'PASSWORD_REQUIRED' };
+      }
+      const ok = await verifyPassword(password, existing.passwordSalt, existing.passwordHash);
+      if (!ok) {
+        return { success: false, reason: 'INVALID_PASSWORD' };
+      }
+    }
+    const acc: Account = {
+      ...existing,
+      registered: existing.registered || registered,
+    };
+    saveAccount(acc);
+    return { success: true, account: acc };
+  }
+
+  // New account creation
+  let salt: string | undefined;
+  let hash: string | undefined;
+  if (password && password.trim()) {
+    const res = await hashPassword(password.trim());
+    salt = res.salt;
+    hash = res.hash;
+  }
+  const acc: Account = {
+    ...createGuest(),
+    name: trimmed,
+    registered,
+    passwordSalt: salt,
+    passwordHash: hash,
+  };
   saveAccount(acc);
-  return acc;
+  return { success: true, account: acc };
+}
+
+/** Set or remove password for an account. Pass empty/null to make passwordless. */
+export async function setAccountPassword(
+  acc: Account,
+  newPassword?: string | null
+): Promise<Account> {
+  let updated: Account;
+  if (!newPassword || !newPassword.trim()) {
+    // Passwordless
+    const { passwordSalt, passwordHash, ...rest } = acc;
+    updated = rest as Account;
+  } else {
+    const { salt, hash } = await hashPassword(newPassword.trim());
+    updated = {
+      ...acc,
+      passwordSalt: salt,
+      passwordHash: hash,
+    };
+  }
+  saveAccount(updated);
+  return updated;
 }
 
 export function logout(): void {
@@ -216,7 +372,7 @@ export function logout(): void {
 
 /** Serialize for JSON backup download. */
 export function exportAccount(acc: Account): string {
-  return JSON.stringify({ version: 1, account: acc }, null, 2);
+  return JSON.stringify({ version: 2, account: acc }, null, 2);
 }
 
 /** Parse an imported JSON backup; throws on malformed data. */
@@ -234,6 +390,8 @@ export function importAccount(json: string): Account {
     ownedArtbooks: Array.isArray(a.ownedArtbooks) ? a.ownedArtbooks : [],
     artifacts: { ...createGuest().artifacts, ...(a.artifacts ?? {}) },
     regulars: Array.isArray(a.regulars) ? a.regulars : [],
+    passwordSalt: typeof a.passwordSalt === 'string' ? a.passwordSalt : undefined,
+    passwordHash: typeof a.passwordHash === 'string' ? a.passwordHash : undefined,
   } as Account;
   const acc = migrateArtbooks(a as Record<string, unknown>, base);
   saveAccount(acc);
