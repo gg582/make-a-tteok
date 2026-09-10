@@ -77,10 +77,12 @@ interface ShopGoods {
   artbooks: string[];
   artifacts: { sangaji: number; jupan: number };
   regulars: string[];
+  activeArtbooks?: string[];
 }
 
 interface ServerEntry extends BoardEntry {
   goods: ShopGoods | null;
+  money?: number;
 }
 
 const ORDER_BARKS = [
@@ -245,49 +247,87 @@ export default function App() {
     }
   }, [account, showToast]);
 
+  /** 잡화 snapshot of an account, as stored in the 명부. */
+  const goodsOf = useCallback(
+    (acc: Account): ShopGoods => ({
+      artbooks: [...acc.ownedArtbooks].map((id) => ARTBOOKS[id].name).sort(),
+      artifacts: { ...acc.artifacts },
+      regulars: [...acc.regulars]
+        .map((id) => REGULARS.find((r) => r.id === id)?.name ?? id)
+        .sort(),
+      activeArtbooks: [...acc.activeArtbooks],
+    }),
+    []
+  );
+
   // Pull the shared 명부 ranking (best effort — offline is fine).
   const fetchRanking = useCallback(() => {
-    fetch('/api/ranking')
+    const currentAcc = accountRef.current;
+    const query =
+      currentAcc && currentAcc.name !== '나그네'
+        ? `?name=${encodeURIComponent(currentAcc.name)}`
+        : '';
+    fetch(`/api/ranking${query}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data: { ranking?: ServerEntry[] }) => {
+      .then((data: { ranking?: ServerEntry[]; mine?: ServerEntry | null }) => {
         if (Array.isArray(data.ranking)) {
           setServerBoard(data.ranking);
-          const currentAcc = accountRef.current;
-          if (currentAcc && currentAcc.name !== '나그네') {
-            const mine = data.ranking.find((e) => e.name === currentAcc.name);
-            if (mine && (mine.score > currentAcc.money || mine.score > currentAcc.bestScore)) {
-              const synced = syncWithServer(currentAcc, mine);
-              setAccount(synced);
+          const acc = accountRef.current;
+          if (acc && acc.name !== '나그네') {
+            const mine = data.mine || data.ranking.find((e) => e.name === acc.name);
+            if (mine) {
+              const currentGoods = goodsOf(acc);
+              const goodsChanged =
+                !!mine.goods &&
+                (JSON.stringify(mine.goods.artbooks ?? []) !== JSON.stringify(currentGoods.artbooks) ||
+                  JSON.stringify(mine.goods.regulars ?? []) !== JSON.stringify(currentGoods.regulars) ||
+                  (mine.goods.artifacts?.sangaji ?? 0) !== currentGoods.artifacts.sangaji ||
+                  (mine.goods.artifacts?.jupan ?? 0) !== currentGoods.artifacts.jupan);
+              const scoreHigher = mine.score > acc.bestScore;
+              const moneyHigher = typeof mine.money === 'number' && mine.money > acc.money;
+
+              if (goodsChanged || scoreHigher || moneyHigher) {
+                const synced = syncWithServer(acc, mine);
+                setAccount(synced);
+              }
             }
           }
         }
       })
       .catch(() => {});
-  }, []);
+  }, [goodsOf]);
 
-  /** 잡화 snapshot of an account, as stored in the 명부. */
-  const goodsOf = (acc: Account): ShopGoods => ({
-    artbooks: [...acc.ownedArtbooks].map((id) => ARTBOOKS[id].name).sort(),
-    artifacts: { ...acc.artifacts },
-    regulars: [...acc.regulars]
-      .map((id) => REGULARS.find((r) => r.id === id)?.name ?? id)
-      .sort(),
-  });
+  /** Synchronize account state (score, stage, shop goods, money) to the server 명부. */
+  const syncToServer = useCallback(
+    (acc: Account, runScore?: number, stage?: number) => {
+      if (acc.name === '나그네' || !acc.registered) return;
+      const goods = goodsOf(acc);
+      const score = Math.max(acc.bestScore, runScore ?? 0);
+      const st = Math.max(1, stage ?? runRef.current?.stage ?? 1);
+      fetch('/api/ranking', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: acc.name,
+          score,
+          stage: st,
+          goods,
+          money: acc.money,
+        }),
+      })
+        .then(() => fetchRanking())
+        .catch(() => {});
+    },
+    [goodsOf, fetchRanking]
+  );
 
   /** Post a finished run to the shared 명부 (registered shops only). */
   const submitRanking = useCallback(
     (acc: Account, runScore: number, stage: number) => {
       if (acc.name === '나그네' || !acc.registered || runScore <= 0) return;
-      const goods = goodsOf(acc);
-      fetch('/api/ranking', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: acc.name, score: runScore, stage, goods }),
-      })
-        .then(() => fetchRanking())
-        .catch(() => showToast('명부 서버에 닿지 않네… 다음에 다시 오를 걸세.'));
+      syncToServer(acc, runScore, stage);
     },
-    [fetchRanking, showToast]
+    [syncToServer]
   );
 
   // On first access or login, reconcile local account vs the 명부 record:
@@ -298,45 +338,47 @@ export default function App() {
     if (!acc || acc.name === '나그네' || !acc.registered) return;
     if (registrySyncedRef.current === acc.name) return;
     registrySyncedRef.current = acc.name;
-    const goods = goodsOf(acc);
-    fetch('/api/ranking')
+
+    fetch(`/api/ranking?name=${encodeURIComponent(acc.name)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data: { ranking?: ServerEntry[] }) => {
-        const mine = (data.ranking ?? []).find((e) => e.name === acc.name);
+      .then((data: { ranking?: ServerEntry[]; mine?: ServerEntry | null }) => {
+        const mine = data.mine || (data.ranking ?? []).find((e) => e.name === acc.name);
         if (!mine) {
-          if (acc.bestScore <= 0) return;
-          return fetch('/api/ranking', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: acc.name, score: acc.bestScore, stage: 1, goods }),
-          });
+          if (
+            acc.bestScore <= 0 &&
+            acc.ownedArtbooks.length === 0 &&
+            acc.regulars.length === 0
+          ) {
+            return;
+          }
+          syncToServer(acc);
+          return;
         }
 
-        // If server has ranking data, ensure local account has at least that money/progress
-        if (mine.score > acc.money || mine.score > acc.bestScore || (mine.goods && JSON.stringify(mine.goods) !== JSON.stringify(goods))) {
-          const synced = syncWithServer(acc, mine);
-          setAccount(synced);
-        }
+        // Reconcile local account vs server record
+        const synced = syncWithServer(acc, mine);
+        setAccount(synced);
 
-        const sameGoods = JSON.stringify(mine.goods) === JSON.stringify(goods);
-        const score = Math.max(acc.bestScore, mine.score);
-        const stage = Math.max(1, mine.stage ?? 1);
-        if (sameGoods && mine.score >= acc.bestScore) return; // in sync
-        return fetch('/api/ranking', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: acc.name, score, stage, goods }),
-        });
+        // If local had goods or score not yet in server, update server with merged state
+        const serverGoods = mine.goods;
+        const mergedGoods = goodsOf(synced);
+        const serverGoodsStr = JSON.stringify(serverGoods ?? {});
+        const mergedGoodsStr = JSON.stringify(mergedGoods);
+        if (mergedGoodsStr !== serverGoodsStr || synced.bestScore > mine.score) {
+          syncToServer(synced);
+        }
       })
       .then(() => fetchRanking())
       .catch(() => {
         registrySyncedRef.current = null; // retry on next account change
       });
-  }, [account, fetchRanking]);
+  }, [account?.name, account?.registered, fetchRanking, goodsOf, syncToServer]);
 
   useEffect(() => {
-    if (phase === 'menu') fetchRanking();
-  }, [phase, fetchRanking]);
+    if (phase === 'menu' || panel === 'shop' || panel === 'ranking') {
+      fetchRanking();
+    }
+  }, [phase, panel, fetchRanking]);
 
   // --- Scene boot (once) -------------------------------------------------
   useEffect(() => {
@@ -629,6 +671,7 @@ export default function App() {
       const [next, success] = useArtifact(acc, id);
       saveAccount(next);
       setAccount(next);
+      syncToServer(next);
       if (success) {
         audioRef.current?.playSfx('coin_toss', { volume: 0.6 });
         finishRef.current(false, true);
@@ -638,7 +681,7 @@ export default function App() {
         showToast(`${ARTIFACTS[id].name}이(가) 빗나갔네! (남은 횟수 ${next.artifacts[id]})`);
       }
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   // --- Account / panels -------------------------------------------------------
@@ -661,10 +704,13 @@ export default function App() {
 
       // Sync with server 명부 immediately to restore money, totalEarned, goods
       try {
-        const rankingRes = await fetch('/api/ranking');
+        const rankingRes = await fetch(`/api/ranking?name=${encodeURIComponent(acc.name)}`);
         if (rankingRes.ok) {
-          const data = (await rankingRes.json()) as { ranking?: ServerEntry[] };
-          const mine = (data.ranking ?? []).find((e) => e.name === acc.name);
+          const data = (await rankingRes.json()) as {
+            ranking?: ServerEntry[];
+            mine?: ServerEntry | null;
+          };
+          const mine = data.mine || (data.ranking ?? []).find((e) => e.name === acc.name);
           if (mine) {
             acc = syncWithServer(acc, mine);
           }
@@ -716,8 +762,9 @@ export default function App() {
     const next: Account = { ...acc, registered: true };
     saveAccount(next);
     setAccount(next);
+    syncToServer(next);
     showToast(`${acc.name} 님, 명부에 올랐네! 다른 떡집과 겨뤄 보시오!`);
-  }, [showToast]);
+  }, [showToast, syncToServer]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -746,6 +793,7 @@ export default function App() {
         .then((json) => {
           const acc = importAccount(json);
           setAccount(acc);
+          syncToServer(acc);
           if (acc.activeArtbooks.length > 0) {
             sceneRef.current?.setArtbooks(artbookIndexes(acc.activeArtbooks));
           }
@@ -753,7 +801,7 @@ export default function App() {
         })
         .catch(() => showToast('계정 파일이 올바르지 않네…'));
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   const handleBuyArtbook = useCallback(
@@ -770,10 +818,11 @@ export default function App() {
       }
       saveAccount(next);
       setAccount(next);
+      syncToServer(next);
       audioRef.current?.playSfx('coin_toss');
       showToast(`「${ARTBOOKS[id].name}」을(를) 손에 넣었네!`);
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   const handleBuyArtifact = useCallback(
@@ -790,10 +839,11 @@ export default function App() {
       }
       saveAccount(next);
       setAccount(next);
+      syncToServer(next);
       audioRef.current?.playSfx('coin_toss');
       showToast(`${ARTIFACTS[id].name} ${ARTIFACTS[id].usesPerBuy}회분을 샀네!`);
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   const handleBuyRegular = useCallback(
@@ -811,10 +861,11 @@ export default function App() {
       }
       saveAccount(next);
       setAccount(next);
+      syncToServer(next);
       audioRef.current?.playSfx('coin_toss');
       showToast(`${item.name}이(가) 단골이 되었네!`);
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   /** Toggle one volume; several can be applied at once. */
@@ -831,6 +882,7 @@ export default function App() {
       };
       saveAccount(next);
       setAccount(next);
+      syncToServer(next);
       sceneRef.current?.setArtbooks(artbookIndexes(next.activeArtbooks));
       showToast(
         applying
@@ -838,7 +890,7 @@ export default function App() {
           : `「${ARTBOOKS[id].name}」을(를) 덮었네.`
       );
     },
-    [showToast]
+    [showToast, syncToServer]
   );
 
   const urgent = timeLeft <= 6 && phase === 'playing';

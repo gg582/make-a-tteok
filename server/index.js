@@ -57,7 +57,10 @@ function send(res, code, data) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === 'POST' && req.url === '/api/session') {
+    const parsedUrl = new URL(req.url, 'http://localhost');
+    const pathname = parsedUrl.pathname;
+
+    if (req.method === 'POST' && pathname === '/api/session') {
       const { targetHop, userId } = await readBody(req);
       const sessionId = randomUUID();
       await redis
@@ -73,7 +76,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { sessionId });
     }
 
-    if (req.method === 'POST' && req.url === '/api/pour') {
+    if (req.method === 'POST' && pathname === '/api/pour') {
       const { sessionId, deltaHop } = await readBody(req);
       const currentHop = await redis.eval(POUR_LUA, {
         keys: [`session:${sessionId}`],
@@ -82,7 +85,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { currentHop });
     }
 
-    if (req.method === 'POST' && req.url === '/api/submit') {
+    if (req.method === 'POST' && pathname === '/api/submit') {
       const { sessionId, userId, score } = await readBody(req);
       const [errorHop, grade] = await redis.eval(SUBMIT_LUA, {
         keys: [`session:${sessionId}`, 'leaderboard:daily'],
@@ -91,72 +94,190 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { errorHop, grade });
     }
 
-    if (req.method === 'GET' && req.url === '/api/leaderboard') {
+    if (req.method === 'GET' && pathname === '/api/leaderboard') {
       const raw = await redis.zRangeWithScores('leaderboard:daily', 0, 9, { REV: true });
       return send(res, 200, {
         leaderboard: raw.map((e) => ({ userId: e.value, score: e.score })),
       });
     }
 
-    // 명부 (global registry): registered shops post their run scores here.
-    if (req.method === 'POST' && req.url === '/api/ranking') {
-      const { name, score, stage, goods } = await readBody(req);
-      if (typeof name !== 'string' || typeof score !== 'number') {
-        return send(res, 400, { error: 'name and score required' });
+    // 명부 (global registry): registered shops post their run scores and goods here.
+    if (req.method === 'POST' && pathname === '/api/ranking') {
+      const { name, score, stage, goods, money } = await readBody(req);
+      if (typeof name !== 'string' || !name.trim()) {
+        return send(res, 400, { error: 'name required' });
       }
-      const cleanName = name.slice(0, 12);
+      const cleanName = name.trim().slice(0, 12);
       // Upsert by shop name: drop older entries for the same shop so
       // changed goods never leave stale duplicates behind.
-      const all = await redis.zRange('ranking:global', 0, -1);
-      for (const m of all) {
-        let mName = m;
+      const allWithScores = await redis.zRangeWithScores('ranking:global', 0, -1);
+      let existingScore = 0;
+      let existingStage = 1;
+      let existingGoods = null;
+      let existingMoney = 0;
+      for (const entry of allWithScores) {
+        let mName = entry.value;
         try {
-          mName = JSON.parse(m).name;
+          const parsed = JSON.parse(entry.value);
+          mName = parsed.name;
+          if (mName === cleanName) {
+            existingScore = entry.score;
+            existingStage = parsed.stage ?? 1;
+            existingGoods = parsed.goods ?? null;
+            existingMoney = parsed.money ?? 0;
+          }
+        } catch {
+          /* legacy plain-name member */
+          if (mName === cleanName) {
+            existingScore = entry.score;
+          }
+        }
+        if (mName === cleanName) {
+          await redis.zRem('ranking:global', entry.value);
+        }
+      }
+
+      // Merge goods: keep union of artbooks & regulars; update artifacts
+      let finalGoods = existingGoods;
+      if (goods && typeof goods === 'object') {
+        const mergedArtbooks = Array.from(
+          new Set([...(existingGoods?.artbooks || []), ...(goods.artbooks || [])])
+        );
+        const mergedRegulars = Array.from(
+          new Set([...(existingGoods?.regulars || []), ...(goods.regulars || [])])
+        );
+        const mergedArtifacts = {
+          sangaji:
+            typeof goods.artifacts?.sangaji === 'number'
+              ? goods.artifacts.sangaji
+              : (existingGoods?.artifacts?.sangaji ?? 0),
+          jupan:
+            typeof goods.artifacts?.jupan === 'number'
+              ? goods.artifacts.jupan
+              : (existingGoods?.artifacts?.jupan ?? 0),
+        };
+        finalGoods = {
+          artbooks: mergedArtbooks,
+          regulars: mergedRegulars,
+          artifacts: mergedArtifacts,
+          ...(goods.activeArtbooks ? { activeArtbooks: goods.activeArtbooks } : {}),
+        };
+      }
+
+      const incomingScore = typeof score === 'number' ? score : 0;
+      const finalScore = Math.max(existingScore, incomingScore);
+      const incomingStage = typeof stage === 'number' ? stage : 1;
+      const finalStage = Math.max(existingStage, incomingStage);
+      const finalMoney = typeof money === 'number' ? money : existingMoney;
+
+      const member = JSON.stringify({
+        name: cleanName,
+        stage: finalStage,
+        goods: finalGoods,
+        money: finalMoney,
+      });
+      await redis.zAdd('ranking:global', { score: finalScore, value: member });
+
+      // Keep account hash in sync
+      await redis.hSet(`account:${cleanName}`, {
+        name: cleanName,
+        score: String(finalScore),
+        stage: String(finalStage),
+        money: String(finalMoney),
+        goods: JSON.stringify(finalGoods),
+        updatedAt: String(Date.now()),
+      });
+
+      return send(res, 200, { ok: true, score: finalScore, stage: finalStage, goods: finalGoods, money: finalMoney });
+    }
+
+    if (req.method === 'GET' && pathname === '/api/ranking') {
+      const queryName = parsedUrl.searchParams.get('name')?.trim().slice(0, 12);
+      const raw = await redis.zRangeWithScores('ranking:global', 0, 9, { REV: true });
+      const ranking = raw.map((e) => {
+        let name = e.value;
+        let stage = 1;
+        let goods = null;
+        let money = 0;
+        try {
+          const m = JSON.parse(e.value);
+          name = m.name;
+          stage = m.stage ?? 1;
+          goods = m.goods ?? null;
+          money = m.money ?? 0;
         } catch {
           /* legacy plain-name member */
         }
-        if (mName === cleanName) await redis.zRem('ranking:global', m);
-      }
-      const member = JSON.stringify({
-        name: cleanName,
-        stage: stage ?? 1,
-        goods: goods && typeof goods === 'object' ? goods : null,
+        return { name, score: e.score, stage, goods, money };
       });
-      await redis.zAdd('ranking:global', { score, value: member });
-      return send(res, 200, { ok: true });
-    }
 
-    if (req.method === 'GET' && req.url === '/api/ranking') {
-      const raw = await redis.zRangeWithScores('ranking:global', 0, 9, { REV: true });
-      return send(res, 200, {
-        ranking: raw.map((e) => {
-          let name = e.value;
-          let stage = 1;
-          let goods = null;
-          try {
-            const m = JSON.parse(e.value);
-            name = m.name;
-            stage = m.stage ?? 1;
-            goods = m.goods ?? null;
-          } catch {
-            /* legacy plain-name member */
+      let mine = null;
+      if (queryName) {
+        mine = ranking.find((r) => r.name === queryName) || null;
+        if (!mine) {
+          const allWithScores = await redis.zRangeWithScores('ranking:global', 0, -1);
+          for (const e of allWithScores) {
+            try {
+              const m = JSON.parse(e.value);
+              if (m.name === queryName) {
+                mine = {
+                  name: m.name,
+                  score: e.score,
+                  stage: m.stage ?? 1,
+                  goods: m.goods ?? null,
+                  money: m.money ?? 0,
+                };
+                break;
+              }
+            } catch {}
           }
-          return { name, score: e.score, stage, goods };
-        }),
-      });
+        }
+        if (!mine) {
+          const accData = await redis.hGetAll(`account:${queryName}`);
+          if (accData && (accData.score || accData.goods)) {
+            let parsedGoods = null;
+            try {
+              parsedGoods = JSON.parse(accData.goods);
+            } catch {}
+            mine = {
+              name: queryName,
+              score: Number(accData.score || 0),
+              stage: Number(accData.stage || 1),
+              goods: parsedGoods,
+              money: Number(accData.money || 0),
+            };
+          }
+        }
+      }
+
+      return send(res, 200, { ranking, mine });
     }
 
     // Account password management (stored with PBKDF2 hash & salt in Redis)
-    if (req.method === 'POST' && req.url === '/api/account/login') {
+    if (req.method === 'POST' && pathname === '/api/account/login') {
       const { name, password } = await readBody(req);
       if (typeof name !== 'string' || !name.trim()) {
         return send(res, 400, { error: 'name required' });
       }
       const cleanName = name.trim().slice(0, 12);
       const acc = await redis.hGetAll(`account:${cleanName}`);
+      let serverData = null;
+      if (acc && (acc.score || acc.goods)) {
+        let parsedGoods = null;
+        try {
+          parsedGoods = JSON.parse(acc.goods);
+        } catch {}
+        serverData = {
+          name: cleanName,
+          score: Number(acc.score || 0),
+          stage: Number(acc.stage || 1),
+          money: Number(acc.money || 0),
+          goods: parsedGoods,
+        };
+      }
       if (!acc || !acc.passwordHash) {
         // Passwordless account
-        return send(res, 200, { ok: true, hasPassword: false });
+        return send(res, 200, { ok: true, hasPassword: false, account: serverData });
       }
       if (!password) {
         return send(res, 401, { error: 'PASSWORD_REQUIRED', hasPassword: true });
@@ -173,10 +294,10 @@ const server = http.createServer(async (req, res) => {
       if (computedHash !== acc.passwordHash) {
         return send(res, 401, { error: 'INVALID_PASSWORD', hasPassword: true });
       }
-      return send(res, 200, { ok: true, hasPassword: true });
+      return send(res, 200, { ok: true, hasPassword: true, account: serverData });
     }
 
-    if (req.method === 'POST' && req.url === '/api/account/password') {
+    if (req.method === 'POST' && pathname === '/api/account/password') {
       const { name, currentPassword, newPassword } = await readBody(req);
       if (typeof name !== 'string' || !name.trim()) {
         return send(res, 400, { error: 'name required' });

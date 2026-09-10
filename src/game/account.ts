@@ -460,8 +460,11 @@ export function syncWithServer(
   serverEntry?: {
     score: number;
     stage?: number;
+    money?: number;
+    totalEarned?: number;
     goods?: {
       artbooks?: string[];
+      activeArtbooks?: string[];
       artifacts?: { sangaji?: number; jupan?: number };
       regulars?: string[];
     } | null;
@@ -470,19 +473,33 @@ export function syncWithServer(
   if (!serverEntry) return acc;
 
   const serverScore = typeof serverEntry.score === 'number' ? serverEntry.score : 0;
-  const mergedMoney = Math.max(acc.money, serverScore);
-  const mergedTotal = Math.max(acc.totalEarned, serverScore);
+  const mergedTotal = Math.max(
+    acc.totalEarned,
+    typeof serverEntry.totalEarned === 'number' ? serverEntry.totalEarned : serverScore
+  );
   const mergedBest = Math.max(acc.bestScore, serverScore);
+
+  let mergedMoney: number;
+  if (typeof serverEntry.money === 'number') {
+    mergedMoney = acc.money === 0 ? serverEntry.money : Math.max(acc.money, serverEntry.money);
+  } else if (acc.money === 0) {
+    mergedMoney = serverScore;
+  } else {
+    mergedMoney = acc.money;
+  }
 
   let mergedArtbooks = [...acc.ownedArtbooks];
   let mergedRegulars = [...acc.regulars];
   const mergedArtifacts = { ...acc.artifacts };
 
   if (serverEntry.goods) {
-    const { artbooks, artifacts, regulars } = serverEntry.goods;
+    const { artbooks, artifacts, regulars, activeArtbooks } = serverEntry.goods;
     if (Array.isArray(artbooks)) {
       for (const [id, def] of Object.entries(ARTBOOKS)) {
-        if (artbooks.includes(def.name) && !mergedArtbooks.includes(id as ArtbookId)) {
+        if (
+          (artbooks.includes(def.name) || artbooks.includes(id)) &&
+          !mergedArtbooks.includes(id as ArtbookId)
+        ) {
           mergedArtbooks.push(id as ArtbookId);
         }
       }
@@ -502,6 +519,17 @@ export function syncWithServer(
           !mergedRegulars.includes(def.id)
         ) {
           mergedRegulars.push(def.id);
+        }
+      }
+    }
+    if (Array.isArray(activeArtbooks) && acc.activeArtbooks.length === 0) {
+      for (const [id, def] of Object.entries(ARTBOOKS)) {
+        if (
+          (activeArtbooks.includes(def.name) || activeArtbooks.includes(id)) &&
+          mergedArtbooks.includes(id as ArtbookId) &&
+          !acc.activeArtbooks.includes(id as ArtbookId)
+        ) {
+          acc.activeArtbooks.push(id as ArtbookId);
         }
       }
     }

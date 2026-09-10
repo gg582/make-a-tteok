@@ -153,4 +153,38 @@ describe('account authentication & password system', () => {
     const stored = getStoredAccount('평석의 달인');
     expect(stored?.money).toBe(57847);
   });
+
+  it('syncWithServer preserves local goods and merges server goods without duplicates', () => {
+    const acc = createGuest();
+    acc.name = '평석의 달인';
+    acc.money = 3000;
+    acc.bestScore = 50000;
+    acc.totalEarned = 60000;
+    acc.ownedArtbooks = ['artbook_2'];
+    acc.regulars = ['sunnim'];
+    acc.artifacts = { sangaji: 1, jupan: 2 };
+
+    const serverEntry = {
+      score: 55000,
+      stage: 4,
+      money: 4000,
+      goods: {
+        artbooks: ['artbook_1', '「십리장터 객주」 화첩'],
+        artifacts: { sangaji: 4, jupan: 1 },
+        regulars: ['banjangnim'],
+      },
+    };
+
+    const synced = syncWithServer(acc, serverEntry);
+    expect(synced.money).toBe(4000);
+    expect(synced.bestScore).toBe(55000);
+    expect(synced.ownedArtbooks).toEqual(
+      expect.arrayContaining(['artbook_1', 'artbook_2', 'artbook_3'])
+    );
+    expect(synced.regulars).toEqual(
+      expect.arrayContaining(['sunnim', 'banjangnim'])
+    );
+    expect(synced.artifacts.sangaji).toBe(4);
+    expect(synced.artifacts.jupan).toBe(2);
+  });
 });
